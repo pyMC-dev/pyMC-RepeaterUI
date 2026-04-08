@@ -32,13 +32,13 @@ const editingNode = ref<TreeNodeData | null>(null);
 const deletingNode = ref<TreeNodeData | null>(null);
 
 // Global flood control — synced from stats
-const globalFloodPolicy = ref<'allow' | 'deny'>('deny');
+const unscopedFloodPolicy = ref<'allow' | 'deny'>('deny');
 
-const statsFloodAllow = computed(() => systemStore.stats?.config?.mesh?.global_flood_allow ?? null);
+const statsFloodAllow = computed(() => systemStore.stats?.config?.mesh?.unscoped_flood_allow ?? null);
 watch(
   statsFloodAllow,
   (val) => {
-    if (val !== null) globalFloodPolicy.value = val ? 'allow' : 'deny';
+    if (val !== null) unscopedFloodPolicy.value = val ? 'allow' : 'deny';
   },
   { immediate: true },
 );
@@ -191,22 +191,22 @@ function handleCloseModal() {
   showAddModal.value = false;
 }
 
-// Handle global flood policy changes
-async function handleGlobalFloodPolicyChange(policy: 'allow' | 'deny') {
+// Handle unscoped flood policy changes
+async function handleUnscopedFloodPolicyChange(policy: 'allow' | 'deny') {
   try {
     const allow = policy === 'allow';
-    const response = await ApiService.updateGlobalFloodPolicy(allow);
+    const response = await ApiService.updateUnscopedFloodPolicy(allow);
 
     if (response.success) {
-      globalFloodPolicy.value = policy;
+      unscopedFloodPolicy.value = policy;
       await systemStore.fetchStats();
     } else {
-      console.error('Failed to update global flood policy:', response.error);
-      error.value = response.error || 'Failed to update global flood policy';
+      console.error('Failed to update unscoped flood policy:', response.error);
+      error.value = response.error || 'Failed to update unscoped flood policy';
     }
   } catch (err) {
-    console.error('Error updating global flood policy:', err);
-    error.value = err instanceof Error ? err.message : 'Failed to update global flood policy';
+    console.error('Error updating unscoped flood policy:', err);
+    error.value = err instanceof Error ? err.message : 'Failed to update unscoped flood policy';
   }
 }
 
@@ -364,7 +364,7 @@ async function handleMoveChildren(data: { nodeId: number; targetParentId: number
       </div>
     </div>
 
-    <!-- Global Flood Control -->
+    <!-- Unscoped Flood Control -->
     <div
       class="glass-card rounded-[15px] p-3 sm:p-4 border border-stroke-subtle dark:border-stroke/10 bg-background-mute dark:bg-white/5"
     >
@@ -373,22 +373,22 @@ async function handleMoveChildren(data: { nodeId: number; targetParentId: number
           <h4
             class="text-xs sm:text-sm font-medium text-content-primary dark:text-content-primary mb-1"
           >
-            Global Flood Policy (*)
+            Unscoped Flood Policy (*)
           </h4>
           <p class="text-content-secondary dark:text-content-muted text-[10px] sm:text-xs">
-            Master control for repeater flooding
+            Allow or Deny unscoped flood packets
           </p>
         </div>
         <div class="flex items-center gap-2 sm:gap-3">
-          <!-- Global Policy Toggle -->
+          <!-- Unscoped Policy Toggle -->
           <div
             class="flex bg-background-mute dark:bg-stroke/5 rounded-lg border border-stroke-subtle dark:border-stroke/20 p-0.5 sm:p-1"
           >
             <button
-              @click="handleGlobalFloodPolicyChange('deny')"
+              @click="handleUnscopedFloodPolicyChange('deny')"
               :class="[
                 'px-2 sm:px-3 py-1 text-[10px] sm:text-xs font-medium rounded transition-colors',
-                globalFloodPolicy === 'deny'
+                unscopedFloodPolicy === 'deny'
                   ? 'bg-accent-red/20 text-accent-red border border-accent-red/50'
                   : 'text-content-secondary dark:text-content-muted hover:text-content-primary dark:hover:text-content-secondary',
               ]"
@@ -396,10 +396,10 @@ async function handleMoveChildren(data: { nodeId: number; targetParentId: number
               DENY
             </button>
             <button
-              @click="handleGlobalFloodPolicyChange('allow')"
+              @click="handleUnscopedFloodPolicyChange('allow')"
               :class="[
                 'px-2 sm:px-3 py-1 text-[10px] sm:text-xs font-medium rounded transition-colors',
-                globalFloodPolicy === 'allow'
+                unscopedFloodPolicy === 'allow'
                   ? 'bg-accent-green/20 text-accent-green border border-accent-green/50'
                   : 'text-content-secondary dark:text-content-muted hover:text-content-primary dark:hover:text-content-secondary',
               ]"

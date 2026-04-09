@@ -349,9 +349,9 @@ export class ApiService {
     return this.delete(`transport_key/${id}`);
   }
 
-  static async updateGlobalFloodPolicy(allow: boolean): Promise<ApiResponse<unknown>> {
-    return this.post('global_flood_policy', {
-      global_flood_allow: allow,
+  static async updateUnscopedFloodPolicy(allow: boolean): Promise<ApiResponse<unknown>> {
+    return this.post('unscoped_flood_policy', {
+      unscoped_flood_allow: allow,
     });
   }
 

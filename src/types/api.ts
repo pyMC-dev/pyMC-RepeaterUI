@@ -175,7 +175,7 @@ export interface SystemStats {
     };
     mesh?: {
       path_hash_mode?: number; // 0 = 1-byte, 1 = 2-byte, 2 = 3-byte
-      global_flood_allow?: boolean;
+      unscoped_flood_allow?: boolean;
     };
     letsmesh?: {
       enabled?: boolean;

@@ -285,24 +285,13 @@ const coreVersion = computed(() => parseVersion(systemStore.coreVersion));
   <aside class="w-[285px] flex-shrink-0 p-[15px] hidden lg:block">
     <div class="glass-card h-full p-6">
       <div class="mb-12">
-        <div class="mb-2 flex justify-center">
+        <div class="mb-3 flex justify-center">
           <img
-            src="@/assets/meshcore.svg"
-            alt="MeshCore"
-            class="h-4 opacity-80 dark:invert-0 invert"
+            src="@/assets/pymclogo.png"
+            alt="pyMC"
+            class="h-[6.5rem]"
           />
         </div>
-        <h1
-          class="text-content-primary dark:text-content-primary text-[22px] font-extrabold tracking-tight mb-3 text-center"
-          style="
-            font-family:
-              system-ui,
-              -apple-system,
-              sans-serif;
-          "
-        >
-          pyMC Repeater
-        </h1>
         <p class="text-content-secondary dark:text-content-muted text-sm">
           {{ systemStore.nodeName }}
           <span
@@ -707,6 +696,19 @@ const coreVersion = computed(() => parseVersion(systemStore.coreVersion));
           />
         </svg>
         Last Updated: {{ currentTime }}
+      </div>
+      
+      <div class="flex flex-col items-center justify-center mb-4">
+        <p
+          class="text-content-muted dark:text-content-muted text-[10px] mb-1 tracking-wide uppercase opacity-70"
+        >
+          Powered by
+        </p>
+        <img
+          src="@/assets/meshcore.svg"
+          alt="MeshCore"
+          class="h-4 opacity-70 dark:invert-0 invert"
+        />
       </div>
 
       <div class="flex items-center justify-center gap-3">

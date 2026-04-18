@@ -291,8 +291,8 @@ const fetchChartData = async () => {
       // Stats fetch failed, use defaults
     }
 
-    // Fetch packets for the time range
-    const packetsRes = await ApiService.get('/filtered_packets', {
+    // Fetch packets for the time range (lightweight endpoint: timestamp, length, payload_length, transmitted only)
+    const packetsRes = await ApiService.get('/airtime_data', {
       start_timestamp: startTime,
       end_timestamp: endTime,
       limit: 50000,

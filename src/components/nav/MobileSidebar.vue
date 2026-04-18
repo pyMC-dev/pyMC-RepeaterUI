@@ -314,9 +314,9 @@ const dutyCycleBarStyle = computed(() => {
       >
         <div class="mb-6 flex items-center justify-between">
           <div>
-            <h1 class="text-content-heading dark:text-white text-[1.25rem] font-bold">
-              pyMC Repeater
-            </h1>
+            <div class="mb-2">
+              <img src="@/assets/pymclogo.png" alt="pyMC" class="h-[5.2rem]" />
+            </div>
             <p class="text-content-secondary dark:text-[#C3C3C3] text-sm">
               {{ systemStore.nodeName }}
               <span
@@ -688,6 +688,17 @@ const dutyCycleBarStyle = computed(() => {
         </div>
 
         <p class="text-content-muted text-xs">Last Updated: {{ currentTime }}</p>
+
+        <div class="flex flex-col items-center justify-center mt-4">
+          <p class="text-content-muted text-[10px] mb-1 tracking-wide uppercase opacity-70">
+            Powered by
+          </p>
+          <img
+            src="@/assets/meshcore.svg"
+            alt="MeshCore"
+            class="h-4 opacity-70 dark:invert-0 invert"
+          />
+        </div>
       </div>
     </div>
   </div>

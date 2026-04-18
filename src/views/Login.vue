@@ -33,28 +33,12 @@
         <!-- Logo/Title -->
         <div class="text-center mb-6 sm:mb-10">
           <div class="mb-4 sm:mb-6 flex justify-center">
-            <div class="relative logo-container">
-              <div
-                class="absolute inset-0 blur-xl bg-primary/30 logo-glow transition-all duration-700 ease-out"
-              ></div>
-              <img
-                src="@/assets/meshcore.svg"
-                alt="MeshCore"
-                class="relative h-7 sm:h-9 opacity-90 logo-image transition-all duration-700 ease-out brightness-0 dark:brightness-100"
-              />
-            </div>
+            <img
+              src="@/assets/pymclogo.png"
+              alt="pyMC"
+              class="logo-image logo-image-animated h-36 sm:h-40 relative z-10"
+            />
           </div>
-          <h1
-            class="text-content-primary dark:text-content-primary text-[24px] sm:text-[32px] font-extrabold tracking-tight mb-2 sm:mb-3 bg-gradient-to-br from-gray-900 to-gray-700 dark:from-white dark:to-white/70 bg-clip-text text-transparent"
-            style="
-              font-family:
-                system-ui,
-                -apple-system,
-                sans-serif;
-            "
-          >
-            pyMC Repeater
-          </h1>
           <p class="text-content-secondary dark:text-content-muted text-xs sm:text-sm">
             Sign in to access your dashboard
           </p>
@@ -148,6 +132,15 @@
 
         <!-- Footer Info -->
         <div class="mt-6 sm:mt-8 pt-4 sm:pt-6 border-t border-stroke-subtle dark:border-stroke/10">
+          <!-- Powered by MeshCore -->
+          <div class="flex flex-col items-center justify-center mb-4">
+            <p class="text-content-muted dark:text-content-muted text-[10px] sm:text-xs mb-1.5 tracking-wide uppercase opacity-60">Powered by</p>
+            <img
+              src="@/assets/meshcore.svg"
+              alt="MeshCore"
+              class="h-4 sm:h-5 opacity-50 brightness-0 dark:brightness-100"
+            />
+          </div>
           <div class="flex items-center justify-center gap-3">
             <a
               href="https://github.com/rightup"
@@ -495,6 +488,28 @@ const handlePasswordChangeClose = () => {
 
 .animate-shake {
   animation: shake 0.5s ease-in-out;
+}
+
+/* Subtle logo aura without circular halo artifact */
+@keyframes logo-aura-cycle {
+  0%,
+  100% {
+    filter: brightness(1) saturate(1) drop-shadow(0 0 7px rgba(56, 189, 248, 0.45));
+  }
+  25% {
+    filter: brightness(1.02) saturate(1.05) drop-shadow(0 0 10px rgba(99, 102, 241, 0.42));
+  }
+  50% {
+    filter: brightness(1) saturate(1.03) drop-shadow(0 0 8px rgba(34, 211, 238, 0.45));
+  }
+  75% {
+    filter: brightness(1.02) saturate(1.05) drop-shadow(0 0 10px rgba(52, 211, 153, 0.42));
+  }
+}
+
+.logo-image-animated {
+  animation: logo-aura-cycle 6s ease-in-out infinite;
+  will-change: filter;
 }
 
 /* Form group hover effect */

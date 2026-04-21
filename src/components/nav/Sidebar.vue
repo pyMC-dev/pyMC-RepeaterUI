@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
+import { computed, onMounted, ref, watch } from 'vue';
 import { useRouter, useRoute } from 'vue-router';
 import { useSystemStore } from '@/stores/system';
 import { useWebSocketStore } from '@/stores/websocket';
 import ApiService from '@/utils/api';
+import { useManagedPolling } from '@/composables/useManagedPolling';
 import GitHubIcon from '../icons/github.vue';
 import CoffeeIcon from '../icons/coffee.vue';
 import RFNoiseFloor from '../charts/RFNoiseFloor.vue';
@@ -38,56 +39,10 @@ const showAdvertModal = ref(false);
 const advertSuccess = ref(false);
 const advertError = ref<string | null>(null);
 
-// Auto refresh cleanup
-let stopAutoRefresh: (() => void) | null = null;
-let tierRefreshInterval: number | null = null;
-
 const currentTier = ref('unknown');
 const advertsAllowed = ref(0);
 const advertsDropped = ref(0);
 const activePenalties = ref(0);
-
-const refreshSystemStats = async (connected: boolean) => {
-  // Always clear existing interval before starting another
-  if (stopAutoRefresh) {
-    stopAutoRefresh();
-    stopAutoRefresh = null;
-  }
-
-  if (!connected) {
-    // Poll /api/stats while websocket is down
-    stopAutoRefresh = await systemStore.startAutoRefresh(5000, connected);
-  } else {
-    // WebSocket just (re)connected — fetch stats once so the version reflects
-    // the currently-running process (WS messages don't carry version)
-    systemStore.fetchStats();
-  }
-};
-
-onMounted(async () => {
-  await refreshSystemStats(wsStore.isConnected);
-  await fetchAdaptiveTier();
-
-  tierRefreshInterval = window.setInterval(() => {
-    fetchAdaptiveTier();
-  }, 30000);
-
-  watch(
-    () => wsStore.isConnected,
-    (connected) => {
-      refreshSystemStats(connected);
-    },
-  );
-});
-
-onUnmounted(() => {
-  if (stopAutoRefresh) {
-    stopAutoRefresh();
-  }
-  if (tierRefreshInterval) {
-    clearInterval(tierRefreshInterval);
-  }
-});
 
 const fetchAdaptiveTier = async () => {
   try {
@@ -105,6 +60,32 @@ const fetchAdaptiveTier = async () => {
     activePenalties.value = 0;
   }
 };
+
+onMounted(async () => {
+  await systemStore.fetchStats();
+  await fetchAdaptiveTier();
+});
+
+watch(
+  () => wsStore.isConnected,
+  (connected) => {
+    if (connected) {
+      void systemStore.fetchStats();
+    }
+  },
+);
+
+useManagedPolling(() => systemStore.fetchStats(), {
+  intervalMs: 5000,
+  enabled: () => !wsStore.isConnected,
+  immediate: false,
+});
+
+useManagedPolling(fetchAdaptiveTier, {
+  intervalMs: 30000,
+  enabled: true,
+  immediate: false,
+});
 
 const adaptiveTierClass = computed(() => {
   switch (currentTier.value) {

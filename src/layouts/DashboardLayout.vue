@@ -1,14 +1,12 @@
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted } from 'vue';
+import { ref } from 'vue';
 import Sidebar from '@/components/nav/Sidebar.vue';
 import MobileSidebar from '@/components/nav/MobileSidebar.vue';
 import TopBar from '@/components/nav/TopBar.vue';
-import { useWebSocketStore } from '@/stores/websocket';
 
 defineOptions({ name: 'DashboardLayout' });
 
 const showMobileSidebar = ref(false);
-const wsStore = useWebSocketStore();
 
 const toggleMobileSidebar = () => {
   showMobileSidebar.value = !showMobileSidebar.value;
@@ -17,16 +15,6 @@ const toggleMobileSidebar = () => {
 const closeMobileSidebar = () => {
   showMobileSidebar.value = false;
 };
-
-// Initialize WebSocket connection when layout mounts (user is authenticated)
-onMounted(() => {
-  wsStore.connect();
-});
-
-// Clean up WebSocket connection when layout is destroyed (user logs out or navigates away)
-onUnmounted(() => {
-  wsStore.disconnect();
-});
 </script>
 
 <template>

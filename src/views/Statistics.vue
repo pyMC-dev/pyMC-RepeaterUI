@@ -26,6 +26,7 @@ import {
 import 'chartjs-adapter-date-fns';
 // Import Plotly.js for 3D pie chart
 import Plotly from 'plotly.js-dist-min';
+import { useManagedPolling } from '@/composables/useManagedPolling';
 
 defineOptions({ name: 'StatisticsView' });
 
@@ -98,20 +99,7 @@ interface SignalMetrics {
 
 const packetStore = usePacketStore();
 const websocketStore = useWebSocketStore();
-const updateInterval = ref<number | null>(null);
 const isUpdatingCharts = ref(false);
-
-const startFallbackPolling = () => {
-  if (updateInterval.value || websocketStore.isConnected) return;
-  updateInterval.value = window.setInterval(fetchAllData, 30000);
-};
-
-const stopFallbackPolling = () => {
-  if (updateInterval.value) {
-    clearInterval(updateInterval.value);
-    updateInterval.value = null;
-  }
-};
 
 // Helper function to get theme-aware colors
 const getThemeColors = () => {
@@ -1134,21 +1122,6 @@ onMounted(async () => {
   // Start data fetching only after nextTick ensures refs are ready
   fetchAllData();
 
-  if (!websocketStore.isConnected) {
-    startFallbackPolling();
-  }
-
-  watch(
-    () => websocketStore.isConnected,
-    (connected) => {
-      if (connected) {
-        stopFallbackPolling();
-      } else {
-        startFallbackPolling();
-      }
-    },
-  );
-
   // Add resize listener to redraw charts when window size changes
   window.addEventListener('resize', () => {
     setTimeout(() => {
@@ -1164,8 +1137,6 @@ onMounted(async () => {
 });
 
 onBeforeUnmount(() => {
-  stopFallbackPolling();
-
   // Destroy charts
   packetRateChart.value?.destroy();
   packetTypeChart.value?.destroy();
@@ -1177,6 +1148,12 @@ onBeforeUnmount(() => {
 
   // Remove resize listener
   window.removeEventListener('resize', () => {});
+});
+
+useManagedPolling(fetchAllData, {
+  intervalMs: 30000,
+  enabled: () => !websocketStore.isConnected,
+  immediate: false,
 });
 </script>
 

@@ -23,6 +23,10 @@ export interface RecentPacket {
   snr: number;
   length: number;
   payload?: string;
+  payload_length?: number;
+  header?: string;
+  raw_packet?: string;
+  transported: boolean;
   transmitted: boolean;
   is_duplicate: boolean;
   drop_reason?: string;

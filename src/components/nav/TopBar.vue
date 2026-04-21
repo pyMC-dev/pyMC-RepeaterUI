@@ -2,10 +2,12 @@
 import { ref, onMounted, onBeforeUnmount, computed } from 'vue';
 import ApiService from '@/utils/api';
 import { useSystemStore } from '@/stores/system';
-import { clearToken, getUsername } from '@/utils/auth';
+import { getUsername } from '@/utils/auth';
 import { useRouter } from 'vue-router';
 import ThemeToggle from '@/components/ThemeToggle.vue';
 import UpdateModal from '@/components/modals/UpdateModal.vue';
+import { useManagedPolling } from '@/composables/useManagedPolling';
+import { useAppRuntimeStore } from '@/stores/appRuntime';
 
 defineOptions({ name: 'TopBar' });
 
@@ -24,6 +26,7 @@ const emit = defineEmits<Emits>();
 
 const router = useRouter();
 const systemStore = useSystemStore();
+const appRuntime = useAppRuntimeStore();
 
 const showNotifications = ref(false);
 const notifRef = ref<HTMLElement | null>(null);
@@ -163,8 +166,7 @@ const handleVersionUpdated = (payload: {
 };
 
 const handleLogout = () => {
-  clearToken();
-  router.push('/login');
+  void appRuntime.stopSession('logout');
 };
 
 const waitForService = async (maxAttempts = 20, interval = 2000) => {
@@ -285,48 +287,26 @@ const getLatestNodeName = (contactType: string) => {
   return latestNode.node_name || 'Unknown Node';
 };
 
-// Auto-refresh tracking data every 30 seconds
-let refreshInterval: number | null = null;
-let updateCheckInterval: number | null = null;
-
-const startAutoRefresh = () => {
-  if (refreshInterval) {
-    clearInterval(refreshInterval);
-  }
-  refreshInterval = setInterval(() => {
-    fetchTrackedNodes();
-  }, 30000); // 30 seconds
-
-  // Check for updates every 10 minutes
-  if (updateCheckInterval) {
-    clearInterval(updateCheckInterval);
-  }
-  updateCheckInterval = setInterval(() => {
-    checkForUpdates();
-  }, 600000); // 10 minutes
-};
-
-const stopAutoRefresh = () => {
-  if (refreshInterval) {
-    clearInterval(refreshInterval);
-    refreshInterval = null;
-  }
-  if (updateCheckInterval) {
-    clearInterval(updateCheckInterval);
-    updateCheckInterval = null;
-  }
-};
-
 onMounted(() => {
   document.addEventListener('click', handleDocClick);
   fetchTrackedNodes();
   checkForUpdates(); // Check for updates on initial load
-  startAutoRefresh();
 });
 
 onBeforeUnmount(() => {
   document.removeEventListener('click', handleDocClick);
-  stopAutoRefresh();
+});
+
+useManagedPolling(fetchTrackedNodes, {
+  intervalMs: 30000,
+  enabled: true,
+  immediate: false,
+});
+
+useManagedPolling(() => checkForUpdates(), {
+  intervalMs: 600000,
+  enabled: true,
+  immediate: false,
 });
 
 const toggleMobileSidebar = () => {

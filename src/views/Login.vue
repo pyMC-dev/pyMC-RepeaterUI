@@ -182,6 +182,7 @@ import { ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { setToken, getClientId } from '@/utils/auth';
 import { authClient } from '@/utils/api';
+import { useAppRuntimeStore } from '@/stores/appRuntime';
 import ChangePasswordModal from '@/components/modals/ChangePasswordModal.vue';
 import GitHubIcon from '@/components/icons/github.vue';
 import CoffeeIcon from '@/components/icons/coffee.vue';
@@ -201,6 +202,7 @@ interface LoginResponse {
 }
 
 const router = useRouter();
+const appRuntime = useAppRuntimeStore();
 
 const username = ref('admin');
 const password = ref('');
@@ -232,11 +234,13 @@ const handleLogin = async () => {
       if (isDefaultPassword) {
         // Store token temporarily and show password change modal
         setToken(loginData.token);
+        appRuntime.markAuthenticated();
         usedDefaultCredentials.value = true;
         showPasswordChangeModal.value = true;
       } else {
         // Store token and redirect to dashboard
         setToken(loginData.token);
+        appRuntime.markAuthenticated();
         router.push('/');
       }
     } else {

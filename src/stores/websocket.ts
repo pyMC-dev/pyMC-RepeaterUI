@@ -1,34 +1,102 @@
-import { ref } from 'vue';
+import { computed, ref } from 'vue';
 import { defineStore } from 'pinia';
 import { usePacketStore } from './packets';
 import { useSystemStore } from './system';
 import { API_SERVER_URL } from '@/utils/api';
-import { getToken, getClientId } from '@/utils/auth';
+import { getClientId, getToken, isTokenExpired } from '@/utils/auth';
+import { useAppRuntimeStore } from '@/stores/appRuntime';
+
+type ConnectionState = 'idle' | 'connecting' | 'open' | 'reconnecting' | 'closed';
+type SnackbarVariant = 'info' | 'success' | 'error';
+type PauseReason = 'lifecycle' | 'logout' | 'hidden' | 'offline';
+
+interface DisconnectOptions {
+  preventReconnect?: boolean;
+  silent?: boolean;
+}
 
 export const useWebSocketStore = defineStore('websocket', () => {
   const ws = ref<WebSocket | null>(null);
-  const isConnected = ref(false);
+  const connectionState = ref<ConnectionState>('idle');
   const reconnectAttempts = ref(0);
+  const lastPongTime = ref(Date.now());
+  const reconnectTimer = ref<number | null>(null);
   const pingInterval = ref<number | null>(null);
-  const lastPongTime = ref<number>(Date.now());
+  const preventReconnect = ref(false);
+  const paused = ref(false);
+  const resumeAnnouncementPending = ref(false);
+  const maxReconnectAttempts = 6;
+  const snackbar = ref<{ visible: boolean; message: string; variant: SnackbarVariant }>({
+    visible: false,
+    message: '',
+    variant: 'info',
+  });
+  let snackbarTimer: number | null = null;
 
   const packetStore = usePacketStore();
   const systemStore = useSystemStore();
+  const appRuntime = useAppRuntimeStore();
 
-  function connect() {
-    // Prevent multiple connections - check if already connected or connecting
-    if (ws.value) {
-      if (ws.value.readyState === WebSocket.OPEN) {
-        console.log('[WebSocket] Already connected, skipping connect()');
-        return;
-      } else if (ws.value.readyState === WebSocket.CONNECTING) {
-        console.log('[WebSocket] Already connecting, skipping connect()');
-        return;
-      }
+  const isConnected = computed(() => connectionState.value === 'open');
+
+  function showSnackbar(message: string, variant: SnackbarVariant, autoHideMs = 0) {
+    if (snackbarTimer !== null) {
+      clearTimeout(snackbarTimer);
+      snackbarTimer = null;
     }
 
-    // In development, connect directly to backend server
-    // In production, use same host as the page
+    snackbar.value = {
+      visible: true,
+      message,
+      variant,
+    };
+
+    if (autoHideMs > 0) {
+      snackbarTimer = window.setTimeout(() => {
+        hideSnackbar();
+      }, autoHideMs);
+    }
+  }
+
+  function hideSnackbar() {
+    if (snackbarTimer !== null) {
+      clearTimeout(snackbarTimer);
+      snackbarTimer = null;
+    }
+
+    snackbar.value.visible = false;
+  }
+
+  function clearReconnectTimer() {
+    if (reconnectTimer.value !== null) {
+      clearTimeout(reconnectTimer.value);
+      reconnectTimer.value = null;
+    }
+  }
+
+  function clearPingInterval() {
+    if (pingInterval.value !== null) {
+      clearInterval(pingInterval.value);
+      pingInterval.value = null;
+    }
+  }
+
+  function startReconnectSnackbar() {
+    showSnackbar('Reconnecting...', 'info');
+  }
+
+  function canOpenConnection() {
+    const token = getToken();
+    return (
+      !preventReconnect.value &&
+      !paused.value &&
+      Boolean(token) &&
+      !isTokenExpired() &&
+      appRuntime.canMaintainConnections
+    );
+  }
+
+  function buildUrl() {
     let wsUrl: string;
 
     const token = getToken();
@@ -38,50 +106,129 @@ export const useWebSocketStore = defineStore('websocket', () => {
     if (clientId) query.set('client_id', clientId);
 
     if (import.meta.env.DEV) {
-      // Development: connect directly to backend
       const devApi = import.meta.env.VITE_DEV_API_URL || 'http://localhost:8000';
       const devWs = devApi.replace(/^http/, 'ws');
       wsUrl = `${devWs}/ws/packets?${query.toString()}`;
     } else {
-      // Production: use current location
       const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
       const host = API_SERVER_URL?.trim() ? new URL(API_SERVER_URL).host : window.location.host;
       wsUrl = `${protocol}//${host}/ws/packets?${query.toString()}`;
     }
 
-    console.log('[WebSocket] Creating new connection...');
-    ws.value = new WebSocket(wsUrl);
+    return wsUrl;
+  }
 
-    ws.value.onopen = () => {
-      console.log('[WebSocket] Connected');
-      isConnected.value = true;
-      reconnectAttempts.value = 0;
+  async function resyncData() {
+    await Promise.allSettled([
+      systemStore.fetchStats(),
+      packetStore.fetchSystemStats(),
+      packetStore.fetchPacketStats({ hours: 24 }),
+      packetStore.fetchRecentPackets({ limit: 100 }),
+      packetStore.initializeSparklineHistory(),
+    ]);
+  }
+
+  function cleanupSocket(removeHandlers = false) {
+    clearPingInterval();
+
+    if (!ws.value) {
+      return;
+    }
+
+    if (removeHandlers) {
+      ws.value.onopen = null;
+      ws.value.onmessage = null;
+      ws.value.onerror = null;
+      ws.value.onclose = null;
+    }
+  }
+
+  function scheduleReconnect() {
+    clearReconnectTimer();
+
+    if (!canOpenConnection()) {
+      connectionState.value = 'closed';
+      return;
+    }
+
+    if (reconnectAttempts.value >= maxReconnectAttempts) {
+      connectionState.value = 'closed';
+      showSnackbar('Connection lost', 'error', 5000);
+      return;
+    }
+
+    connectionState.value = 'reconnecting';
+    startReconnectSnackbar();
+
+    const delay = Math.min(1000 * 2 ** reconnectAttempts.value, 30000);
+    reconnectAttempts.value += 1;
+    reconnectTimer.value = window.setTimeout(() => {
+      reconnectTimer.value = null;
+      connect(true);
+    }, delay);
+  }
+
+  function connect(isReconnect = false) {
+    if (!canOpenConnection()) {
+      return;
+    }
+
+    if (ws.value?.readyState === WebSocket.OPEN || ws.value?.readyState === WebSocket.CONNECTING) {
+      return;
+    }
+
+    clearReconnectTimer();
+    cleanupSocket(true);
+
+    const shouldAnnounceReconnect =
+      isReconnect || reconnectAttempts.value > 0 || resumeAnnouncementPending.value;
+
+    connectionState.value = shouldAnnounceReconnect ? 'reconnecting' : 'connecting';
+
+    if (resumeAnnouncementPending.value) {
+      startReconnectSnackbar();
+    }
+
+    const socket = new WebSocket(buildUrl());
+    ws.value = socket;
+
+    socket.onopen = () => {
+      connectionState.value = 'open';
       lastPongTime.value = Date.now();
+      const wasReconnect = reconnectAttempts.value > 0 || resumeAnnouncementPending.value;
+      reconnectAttempts.value = 0;
+      resumeAnnouncementPending.value = false;
 
-      // Start client-side ping interval
-      if (pingInterval.value) clearInterval(pingInterval.value);
+      clearPingInterval();
       pingInterval.value = window.setInterval(() => {
-        if (ws.value?.readyState === WebSocket.OPEN) {
-          ws.value.send(JSON.stringify({ type: 'ping' }));
-
-          // Check if we haven't received pong in 60s (2x server interval)
-          if (Date.now() - lastPongTime.value > 60000) {
-            console.warn('[WebSocket] No pong received, reconnecting...');
-            disconnect();
-            connect();
-          }
+        if (ws.value?.readyState !== WebSocket.OPEN) {
+          return;
         }
-      }, 30000); // Client ping every 30s
+
+        ws.value.send(JSON.stringify({ type: 'ping' }));
+
+        if (Date.now() - lastPongTime.value > 60000) {
+          cleanupSocket(true);
+          ws.value?.close();
+        }
+      }, 30000);
+
+      void resyncData();
+
+      if (wasReconnect) {
+        showSnackbar('Back online', 'success', 2500);
+      } else {
+        hideSnackbar();
+      }
     };
 
-    ws.value.onmessage = (event) => {
+    socket.onmessage = (event) => {
       try {
         const message = JSON.parse(event.data);
 
         if (message.type === 'packet') {
           packetStore.addRealtimePacket(message.data);
         } else if (message.type === 'stats') {
-          // Backend sends combined stats message
           if (message.data?.packet_stats) {
             packetStore.updateRealtimeStats({ packet_stats: message.data.packet_stats });
           }
@@ -93,10 +240,8 @@ export const useWebSocketStore = defineStore('websocket', () => {
         } else if (message.type === 'system_stats') {
           systemStore.updateRealtimeStats(message.data);
         } else if (message.type === 'pong' || message.type === 'ping') {
-          // Update last pong time on any server heartbeat
           lastPongTime.value = Date.now();
 
-          // Respond to server pings
           if (message.type === 'ping' && ws.value?.readyState === WebSocket.OPEN) {
             ws.value.send(JSON.stringify({ type: 'pong' }));
           }
@@ -106,73 +251,80 @@ export const useWebSocketStore = defineStore('websocket', () => {
       }
     };
 
-    ws.value.onerror = () => {
-      console.log('[WebSocket] Error');
-      isConnected.value = false;
-      ws.value = null;
-
-      // Clear ping interval
-      if (pingInterval.value) {
-        clearInterval(pingInterval.value);
-        pingInterval.value = null;
-      }
-
-      // Exponential backoff: 1s, 2s, 4s, 8s, 16s, max 30s
-      if (reconnectAttempts.value < 5) {
-        // Reduced from 20 to 5 for testing
-        const delay = Math.min(1000 * Math.pow(2, Math.min(reconnectAttempts.value, 5)), 30000);
-        console.log(
-          `[WebSocket] Reconnecting in ${delay}ms (attempt ${reconnectAttempts.value + 1})`,
-        );
-        reconnectAttempts.value++;
-        setTimeout(connect, delay);
-      } else {
-        console.error('[WebSocket] Max reconnection attempts reached - stopping');
-      }
+    socket.onerror = () => {
+      connectionState.value = reconnectAttempts.value > 0 ? 'reconnecting' : 'closed';
     };
 
-    ws.value.onclose = () => {
-      console.log('[WebSocket] Disconnected');
-      isConnected.value = false;
-      ws.value = null;
+    socket.onclose = (event) => {
+      const currentSocket = ws.value;
+      cleanupSocket();
 
-      // Clear ping interval
-      if (pingInterval.value) {
-        clearInterval(pingInterval.value);
-        pingInterval.value = null;
+      if (currentSocket === ws.value) {
+        ws.value = null;
       }
 
-      // Only auto-reconnect if we haven't hit max attempts
-      if (reconnectAttempts.value < 5) {
-        reconnectAttempts.value = 0;
-        setTimeout(connect, 3000);
-      } else {
-        console.log('[WebSocket] Not reconnecting - max attempts reached');
+      if (preventReconnect.value || paused.value) {
+        connectionState.value = 'closed';
+        return;
       }
+
+      if (event.code === 1008 || event.code === 4001 || event.code === 4003) {
+        void appRuntime.handleAuthFailure('expired');
+        return;
+      }
+
+      scheduleReconnect();
     };
   }
 
-  function disconnect() {
-    console.log('[WebSocket] Disconnecting...');
+  function pause(reason: PauseReason = 'lifecycle') {
+    paused.value = true;
+    clearReconnectTimer();
+    connectionState.value = 'closed';
 
-    // Clear ping interval
-    if (pingInterval.value) {
-      clearInterval(pingInterval.value);
-      pingInterval.value = null;
+    if (reason === 'offline') {
+      resumeAnnouncementPending.value = true;
+      showSnackbar('Connection lost', 'error', 4000);
+    } else if (reason === 'hidden') {
+      resumeAnnouncementPending.value = true;
+      hideSnackbar();
+    } else if (reason === 'logout') {
+      resumeAnnouncementPending.value = false;
+      hideSnackbar();
     }
 
-    // Close the connection
     if (ws.value) {
-      // Remove event handlers to prevent reconnection
-      ws.value.onclose = null;
-      ws.value.onerror = null;
-      ws.value.close();
+      const socket = ws.value;
       ws.value = null;
+      cleanupSocket(true);
+      socket.close();
     }
+  }
 
-    isConnected.value = false;
+  function allowReconnect() {
+    preventReconnect.value = false;
+    paused.value = false;
+  }
+
+  function disconnect(options: DisconnectOptions = {}) {
+    preventReconnect.value = options.preventReconnect ?? preventReconnect.value;
+    if (!options.silent) {
+      hideSnackbar();
+    }
+    pause(options.preventReconnect ? 'logout' : 'lifecycle');
     reconnectAttempts.value = 0;
   }
 
-  return { isConnected, connect, disconnect };
+  return {
+    isConnected,
+    connectionState,
+    reconnectAttempts,
+    snackbar,
+    connect,
+    disconnect,
+    pause,
+    allowReconnect,
+    hideSnackbar,
+    resyncData,
+  };
 });

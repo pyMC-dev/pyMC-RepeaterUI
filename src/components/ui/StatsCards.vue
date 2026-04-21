@@ -8,16 +8,16 @@
  * - Historical data initialization for immediate meaningful charts
  * - Smooth interpolation for real-time updates
  */
-import { ref, onMounted, onBeforeUnmount, computed, nextTick, watch } from 'vue';
+import { ref, onMounted, onBeforeUnmount, computed, nextTick } from 'vue';
 import ChartSparkline from './ChartSparkline.vue';
 import { usePacketStore } from '@/stores/packets';
 import { useWebSocketStore } from '@/stores/websocket';
+import { useManagedPolling } from '@/composables/useManagedPolling';
 
 defineOptions({ name: 'StatsCards' });
 
 const packetStore = usePacketStore();
 const wsStore = useWebSocketStore();
-const updateInterval = ref<number | null>(null);
 const interpolationInterval = ref<number | null>(null);
 const isUpdating = ref(false);
 
@@ -90,40 +90,19 @@ onMounted(async () => {
   // Then fetch current stats
   fetchStats();
 
-  // Only poll as a fallback when websocket is not connected
-  if (!wsStore.isConnected) {
-    updateInterval.value = window.setInterval(fetchStats, 30000);
-  }
-
   // Refresh sparkline data every 60 seconds (24-hour view doesn't need frequent updates)
   interpolationInterval.value = window.setInterval(() => {
     packetStore.interpolateRates();
   }, 60000);
 });
 
-// Adjust polling frequency based on WebSocket connection
-watch(
-  () => wsStore.isConnected,
-  (connected) => {
-    if (connected) {
-      // Stop polling when websocket is active
-      if (updateInterval.value) {
-        clearInterval(updateInterval.value);
-        updateInterval.value = null;
-      }
-    } else {
-      // Start fallback polling if not already running
-      if (!updateInterval.value) {
-        updateInterval.value = window.setInterval(fetchStats, 30000);
-      }
-    }
-  },
-);
+useManagedPolling(fetchStats, {
+  intervalMs: 30000,
+  enabled: () => !wsStore.isConnected,
+  immediate: false,
+});
 
 onBeforeUnmount(() => {
-  if (updateInterval.value) {
-    clearInterval(updateInterval.value);
-  }
   if (interpolationInterval.value) {
     clearInterval(interpolationInterval.value);
   }

@@ -2,13 +2,12 @@ import axios from 'axios';
 import type { AxiosInstance, AxiosRequestConfig, AxiosResponse } from 'axios';
 import {
   getToken,
-  clearToken,
   isTokenExpired,
   shouldRefreshToken,
   setToken,
   getClientId,
 } from './auth';
-import router from '@/router';
+import { useAppRuntimeStore } from '@/stores/appRuntime';
 
 // API Response interface for consistent response structure
 export interface ApiResponse<T = unknown> {
@@ -69,8 +68,8 @@ async function refreshToken(): Promise<string> {
       }
     } catch (error) {
       console.error('Token refresh error:', error);
-      clearToken();
-      router.push('/login');
+      const appRuntime = useAppRuntimeStore();
+      await appRuntime.handleAuthFailure('expired');
       throw error;
     } finally {
       isRefreshing = false;
@@ -127,8 +126,8 @@ authClient.interceptors.request.use(
 
       // Check if token is expired
       if (isTokenExpired()) {
-        clearToken();
-        router.push('/login');
+        const appRuntime = useAppRuntimeStore();
+        void appRuntime.handleAuthFailure('expired');
         return Promise.reject(new Error('Token expired'));
       }
 
@@ -150,13 +149,9 @@ authClient.interceptors.response.use(
   },
   (error) => {
     // Handle 401 Unauthorized - redirect to login
-    if (error.response?.status === 401) {
-      clearToken();
-
-      // Only redirect if not already on login page
-      if (router.currentRoute.value.path !== '/login') {
-        router.push('/login');
-      }
+    if (error.response?.status === 401 || error.response?.status === 403) {
+      const appRuntime = useAppRuntimeStore();
+      void appRuntime.handleAuthFailure(error.response?.status === 403 ? 'forbidden' : 'unauthorized');
     }
 
     console.error('Auth API Response Error:', error.response?.data || error.message);
@@ -189,8 +184,8 @@ apiClient.interceptors.request.use(
 
       // Check if token is expired
       if (isTokenExpired()) {
-        clearToken();
-        router.push('/login');
+        const appRuntime = useAppRuntimeStore();
+        void appRuntime.handleAuthFailure('expired');
         return Promise.reject(new Error('Token expired'));
       }
 
@@ -212,13 +207,9 @@ apiClient.interceptors.response.use(
   },
   (error) => {
     // Handle 401 Unauthorized - redirect to login
-    if (error.response?.status === 401) {
-      clearToken();
-
-      // Only redirect if not already on login page
-      if (router.currentRoute.value.path !== '/login') {
-        router.push('/login');
-      }
+    if (error.response?.status === 401 || error.response?.status === 403) {
+      const appRuntime = useAppRuntimeStore();
+      void appRuntime.handleAuthFailure(error.response?.status === 403 ? 'forbidden' : 'unauthorized');
     }
 
     console.error('API Response Error:', error.response?.data || error.message);

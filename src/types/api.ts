@@ -23,6 +23,10 @@ export interface RecentPacket {
   snr: number;
   length: number;
   payload?: string;
+  payload_length?: number;
+  header?: string;
+  raw_packet?: string;
+  transported: boolean;
   transmitted: boolean;
   is_duplicate: boolean;
   drop_reason?: string;
@@ -177,19 +181,29 @@ export interface SystemStats {
       path_hash_mode?: number; // 0 = 1-byte, 1 = 2-byte, 2 = 3-byte
       unscoped_flood_allow?: boolean;
     };
-    letsmesh?: {
-      enabled?: boolean;
+    mqtt_brokers?: {
       iata_code?: string;
-      broker_index?: number;
       status_interval?: number;
       owner?: string;
       email?: string;
-      disallowed_packet_types?: string[];
-      additional_brokers?: Array<{
+      brokers?: Array<{
+        enabled: boolean;
         name: string;
         host: string;
         port: number;
-        audience: string;
+        use_jwt_auth?: boolean;
+        transport?: string;
+        audience?: string;
+        username?: string;
+        password?: string;
+        topic_prefix?: string;
+        format: string;
+        disallowed_packet_types?: string[];
+        retain_status?: boolean;
+        tls?: {
+          enabled?: boolean;
+          insecure?: boolean;
+        }
       }>;
     };
   };

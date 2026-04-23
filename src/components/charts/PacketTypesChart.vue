@@ -3,6 +3,7 @@ import { ref, computed, onMounted, watch } from 'vue';
 import ApiService from '@/utils/api';
 import { usePacketStore } from '@/stores/packets';
 import { useWebSocketStore } from '@/stores/websocket';
+import { useManagedPolling } from '@/composables/useManagedPolling';
 
 defineOptions({ name: 'PacketTypesChart' });
 
@@ -201,16 +202,11 @@ watch(
   { deep: true, immediate: true },
 );
 
-// One-shot fallback fetch if websocket isn't connected yet
-watch(
-  () => wsStore.isConnected,
-  (connected) => {
-    if (!connected) {
-      fetchChartData();
-    }
-  },
-  { immediate: true },
-);
+useManagedPolling(fetchChartData, {
+  intervalMs: 30000,
+  enabled: () => !wsStore.isConnected,
+  immediate: true,
+});
 </script>
 
 <template>

@@ -259,11 +259,9 @@ const fetchChartData = async () => {
   isLoading.value = true;
 
   try {
-    // Configuration: 24 hours of data, 10-second buckets
     const hours = 24;
-    const bucketSeconds = 10;
+    const bucketSeconds = 60; // server-side aggregation into 60-second buckets (1,440 max vs 50,000 raw)
     const bucketMs = bucketSeconds * 1000;
-    const bucketCount = (hours * 3600) / bucketSeconds;
 
     const endTime = Math.floor(Date.now() / 1000);
     const startTime = endTime - hours * 3600;
@@ -284,84 +282,70 @@ const fetchChartData = async () => {
             preamble: radio.preamble_length ?? 17,
           };
         }
-        // Capture dropped count for local stats
         droppedCount = (statsData.dropped_count as number) ?? 0;
       }
     } catch {
       // Stats fetch failed, use defaults
     }
 
-    // Fetch packets for the time range (lightweight endpoint: timestamp, length, payload_length, transmitted only)
-    const packetsRes = await ApiService.get('/airtime_data', {
+    // Fetch pre-aggregated buckets from server (rx_ms/tx_ms per bucket_seconds interval)
+    const chartRes = await ApiService.get('/airtime_chart_data', {
       start_timestamp: startTime,
       end_timestamp: endTime,
-      limit: 50000,
+      bucket_seconds: bucketSeconds,
+      sf: radioConfig.value.sf,
+      bw_hz: radioConfig.value.bwHz,
+      cr: radioConfig.value.cr,
+      preamble: radioConfig.value.preamble,
     });
-    if (!packetsRes.success) {
+    if (!chartRes.success) {
       chartData.value = [];
       isLoading.value = false;
       nextTick(() => drawChart());
       return;
     }
 
-    const packets = (packetsRes.data as Packet[]) || [];
+    const payload = chartRes.data as {
+      buckets: { timestamp: number; rx_ms: number; tx_ms: number; rx_count: number; tx_count: number }[];
+      bucket_seconds: number;
+      rx_total: number;
+      tx_total: number;
+    };
+    const buckets = payload.buckets || [];
 
-    // Initialize airtime buckets
-    const rxAirtime = new Float64Array(bucketCount);
-    const txAirtime = new Float64Array(bucketCount);
+    // Update local stats from totals
+    localStats.value = {
+      totalReceived: payload.rx_total || 0,
+      totalTransmitted: payload.tx_total || 0,
+      dropped: droppedCount,
+      firstPacketTime: buckets.length > 0 ? buckets[0].timestamp : endTime,
+    };
 
-    // Track local stats from fetched packets
-    let rxCount = 0;
-    let txCount = 0;
-    let earliestTimestamp = Infinity;
+    // Convert pre-aggregated buckets directly to utilization samples
+    // Fill a dense array covering the full time range (gaps = 0% utilization)
+    const bucketCount = (hours * 3600) / bucketSeconds;
+    const rxUtil = new Float64Array(bucketCount);
+    const txUtil = new Float64Array(bucketCount);
 
-    // Process each packet into buckets
-    for (const pkt of packets) {
-      const bucketIdx = Math.floor((pkt.timestamp - startTime) / bucketSeconds);
-      if (bucketIdx < 0 || bucketIdx >= bucketCount) continue;
-
-      // Use pre-calculated airtime from backend when available
-      const airtime = getPacketAirtime(pkt);
-      const origin = pkt.packet_origin;
-
-      // Track earliest packet for uptime estimation
-      if (pkt.timestamp < earliestTimestamp) {
-        earliestTimestamp = pkt.timestamp;
-      }
-
-      // TX: packets transmitted by this node (local + forwarded)
-      if (origin === 'tx_local' || origin === 'tx_forward' || pkt.transmitted) {
-        txAirtime[bucketIdx] += airtime;
-        txCount++;
-      }
-
-      // RX: all packets received from the air (non-local)
-      if (origin !== 'tx_local') {
-        rxAirtime[bucketIdx] += airtime;
-        rxCount++;
+    for (const b of buckets) {
+      const idx = Math.floor((b.timestamp - startTime) / bucketSeconds);
+      if (idx >= 0 && idx < bucketCount) {
+        rxUtil[idx] = (b.rx_ms / bucketMs) * 100;
+        txUtil[idx] = (b.tx_ms / bucketMs) * 100;
       }
     }
 
-    // Update local stats for template display
-    localStats.value = {
-      totalReceived: rxCount,
-      totalTransmitted: txCount,
-      dropped: droppedCount,
-      firstPacketTime: earliestTimestamp === Infinity ? endTime : earliestTimestamp,
-    };
-
-    // Convert airtime to utilization percentage
     const rawSamples: UtilSample[] = [];
     for (let i = 0; i < bucketCount; i++) {
       rawSamples.push({
         timestamp: startTime + i * bucketSeconds,
-        rxUtil: (rxAirtime[i] / bucketMs) * 100,
-        txUtil: (txAirtime[i] / bucketMs) * 100,
+        rxUtil: rxUtil[i],
+        txUtil: txUtil[i],
       });
     }
 
-    // Apply EMA smoothing (half-life of 60 samples ≈ 10 minutes)
-    const smoothedSamples = applyEmaSmoothing(rawSamples, 60);
+    // Apply EMA smoothing (half-life of 10 samples = 10 minutes at 60s buckets)
+    const smoothedSamples = applyEmaSmoothing(rawSamples, 10);
 
     // Downsample to ~400 points for efficient rendering
     const step = Math.max(1, Math.floor(smoothedSamples.length / 400));

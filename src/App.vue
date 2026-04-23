@@ -1,14 +1,27 @@
 <script setup lang="ts">
-import { computed, watch, onMounted } from 'vue';
+import { computed, watch } from 'vue';
 import { useRoute } from 'vue-router';
 import DashboardLayout from '@/layouts/DashboardLayout.vue';
 import { isAuthenticated } from '@/utils/auth';
 import { useTheme } from '@/composables/useTheme';
+import { useConnectionLifecycle } from '@/composables/useConnectionLifecycle';
+import ConnectionSnackbar from '@/components/ui/ConnectionSnackbar.vue';
+import { useAppRuntimeStore } from '@/stores/appRuntime';
 
 const route = useRoute();
+const appRuntime = useAppRuntimeStore();
 
 // Initialize theme
 const { theme } = useTheme();
+useConnectionLifecycle();
+
+watch(
+  () => route.fullPath,
+  () => {
+    appRuntime.syncAuthState();
+  },
+  { immediate: true },
+);
 
 // Show layout only if authenticated AND not on login page
 const showLayout = computed(() => {
@@ -25,6 +38,8 @@ const showLayout = computed(() => {
 
   <!-- Direct render for login page (no layout) -->
   <router-view v-else />
+
+  <ConnectionSnackbar />
 </template>
 
 <style>

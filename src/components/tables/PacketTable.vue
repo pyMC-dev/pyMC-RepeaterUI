@@ -2,6 +2,7 @@
 import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue';
 import { usePacketStore } from '@/stores/packets';
 import { useWebSocketStore } from '@/stores/websocket';
+import { useManagedPolling } from '@/composables/useManagedPolling';
 import type { RecentPacket } from '@/types/api';
 import PacketDetailsModal from '@/components/modals/PacketDetailsModal.vue';
 import { getPreference, setPreference } from '@/utils/preferences';
@@ -12,7 +13,6 @@ const packetStore = usePacketStore();
 const wsStore = useWebSocketStore();
 const currentPage = ref(1);
 const itemsPerPage = 10;
-const updateInterval = ref<number | null>(null);
 
 // Record limit management
 const currentLimit = ref(100);
@@ -48,10 +48,21 @@ watch(
 const selectedPacket = ref<RecentPacket | null>(null);
 const isModalOpen = ref(false);
 
-// Open packet details modal
-const openPacketDetails = (packet: RecentPacket) => {
+// Open packet details modal, then enrich with full detail fields (header, raw_packet)
+// lazily so the list queries stay lean.
+const openPacketDetails = async (packet: RecentPacket) => {
   selectedPacket.value = packet;
   isModalOpen.value = true;
+  if (packet.packet_hash && (!packet.header || !packet.raw_packet)) {
+    try {
+      const full = await packetStore.getPacketByHash(packet.packet_hash);
+      if (full && selectedPacket.value?.packet_hash === packet.packet_hash) {
+        selectedPacket.value = { ...selectedPacket.value, ...full };
+      }
+    } catch {
+      // Non-fatal: modal renders with partial data
+    }
+  }
 };
 
 // Close modal
@@ -399,37 +410,15 @@ const loadMoreRecords = async () => {
 onMounted(async () => {
   // Initial fetch
   await fetchData();
-
-  // Only poll if WebSocket is not connected
-  // WebSocket provides real-time updates, so polling is redundant
-  if (!wsStore.isConnected) {
-    updateInterval.value = window.setInterval(fetchData, 10000);
-  }
 });
 
-// Watch WebSocket connection status
-watch(
-  () => wsStore.isConnected,
-  (connected) => {
-    if (connected) {
-      // WebSocket connected - stop polling
-      if (updateInterval.value) {
-        clearInterval(updateInterval.value);
-        updateInterval.value = null;
-      }
-    } else {
-      // WebSocket disconnected - start polling as fallback
-      if (!updateInterval.value) {
-        updateInterval.value = window.setInterval(fetchData, 10000);
-      }
-    }
-  },
-);
+useManagedPolling(() => fetchData(), {
+  intervalMs: 10000,
+  enabled: () => !wsStore.isConnected,
+  immediate: false,
+});
 
 onBeforeUnmount(() => {
-  if (updateInterval.value) {
-    clearInterval(updateInterval.value);
-  }
   // Clean up timeout
   if (hideTimeout) {
     clearTimeout(hideTimeout);

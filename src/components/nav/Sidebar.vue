@@ -25,17 +25,6 @@ import DutycycleIcon from '../icons/dutycycle.vue';
 
 defineOptions({ name: 'SidebarNav' });
 
-interface AdvertRateLimitStats {
-  adaptive?: {
-    current_tier?: string;
-  };
-  stats?: {
-    adverts_allowed?: number;
-    adverts_dropped?: number;
-  };
-  active_penalties?: Record<string, unknown>;
-}
-
 const router = useRouter();
 const route = useRoute();
 const systemStore = useSystemStore();
@@ -59,7 +48,7 @@ const activePenalties = ref(0);
 const fetchAdaptiveTier = async () => {
   try {
     const response = await ApiService.get('/advert_rate_limit_stats');
-    const data = response?.data as AdvertRateLimitStats | undefined;
+    const data = response?.data as any;
     currentTier.value =
       typeof data?.adaptive?.current_tier === 'string' ? data.adaptive.current_tier : 'unknown';
     advertsAllowed.value = data?.stats?.adverts_allowed || 0;
@@ -281,7 +270,11 @@ const coreVersion = computed(() => parseVersion(systemStore.coreVersion));
     <div class="glass-card h-full p-6">
       <div class="mb-12">
         <div class="mb-3 flex justify-center">
-          <img src="@/assets/pymclogo.png" alt="pyMC" class="h-[6.5rem]" />
+          <img
+            src="@/assets/pymclogo.png"
+            alt="pyMC"
+            class="h-[6.5rem]"
+          />
         </div>
         <p class="text-content-secondary dark:text-content-muted text-sm">
           {{ systemStore.nodeName }}
@@ -688,7 +681,7 @@ const coreVersion = computed(() => parseVersion(systemStore.coreVersion));
         </svg>
         Last Updated: {{ currentTime }}
       </div>
-
+      
       <div class="flex flex-col items-center justify-center mb-4">
         <p
           class="text-content-muted dark:text-content-muted text-[10px] mb-1 tracking-wide uppercase opacity-70"

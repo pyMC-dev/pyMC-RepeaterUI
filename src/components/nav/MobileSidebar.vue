@@ -27,17 +27,6 @@ import DutycycleIcon from '../icons/dutycycle.vue';
 
 defineOptions({ name: 'MobileSidebar' });
 
-interface AdvertRateLimitStats {
-  adaptive?: {
-    current_tier?: string;
-  };
-  stats?: {
-    adverts_allowed?: number;
-    adverts_dropped?: number;
-  };
-  active_penalties?: Record<string, unknown>;
-}
-
 interface Props {
   showMobileSidebar: boolean;
 }
@@ -113,7 +102,7 @@ onUnmounted(() => {
 const fetchAdaptiveTier = async () => {
   try {
     const response = await ApiService.get('/advert_rate_limit_stats');
-    const data = response?.data as AdvertRateLimitStats | undefined;
+    const data = response?.data as any;
     currentTier.value =
       typeof data?.adaptive?.current_tier === 'string' ? data.adaptive.current_tier : 'unknown';
     advertsAllowed.value = data?.stats?.adverts_allowed || 0;

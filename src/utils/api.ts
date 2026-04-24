@@ -1,6 +1,12 @@
 import axios from 'axios';
 import type { AxiosInstance, AxiosRequestConfig, AxiosResponse } from 'axios';
-import { getToken, isTokenExpired, shouldRefreshToken, setToken, getClientId } from './auth';
+import {
+  getToken,
+  isTokenExpired,
+  shouldRefreshToken,
+  setToken,
+  getClientId,
+} from './auth';
 import { useAppRuntimeStore } from '@/stores/appRuntime';
 import type { GPSDiagnostics } from '@/types/api';
 
@@ -146,9 +152,7 @@ authClient.interceptors.response.use(
     // Handle 401 Unauthorized - redirect to login
     if (error.response?.status === 401 || error.response?.status === 403) {
       const appRuntime = useAppRuntimeStore();
-      void appRuntime.handleAuthFailure(
-        error.response?.status === 403 ? 'forbidden' : 'unauthorized',
-      );
+      void appRuntime.handleAuthFailure(error.response?.status === 403 ? 'forbidden' : 'unauthorized');
     }
 
     console.error('Auth API Response Error:', error.response?.data || error.message);
@@ -206,9 +210,7 @@ apiClient.interceptors.response.use(
     // Handle 401 Unauthorized - redirect to login
     if (error.response?.status === 401 || error.response?.status === 403) {
       const appRuntime = useAppRuntimeStore();
-      void appRuntime.handleAuthFailure(
-        error.response?.status === 403 ? 'forbidden' : 'unauthorized',
-      );
+      void appRuntime.handleAuthFailure(error.response?.status === 403 ? 'forbidden' : 'unauthorized');
     }
 
     console.error('API Response Error:', error.response?.data || error.message);

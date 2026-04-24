@@ -203,7 +203,7 @@ export interface SystemStats {
         tls?: {
           enabled?: boolean;
           insecure?: boolean;
-        };
+        }
       }>;
     };
   };

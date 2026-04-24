@@ -21,6 +21,7 @@ import TerminalIcon from '../icons/terminal.vue';
 import StatsIcon from '../icons/stats.vue';
 import SystemIcon from '../icons/system.vue';
 import NeighborsIcon from '../icons/neighbors.vue';
+import GpsIcon from '../icons/gps.vue';
 
 import DutycycleIcon from '../icons/dutycycle.vue';
 
@@ -135,6 +136,7 @@ const iconComponents = {
   dashboard: DashboardIcon,
   neighbors: NeighborsIcon,
   statistics: StatsIcon,
+  gps: GpsIcon,
   'system-stats': SystemIcon,
   sessions: SystemIcon, // Reuse SystemIcon for sessions
   configuration: ConfigurationsIcon,
@@ -151,6 +153,7 @@ const sidebarItems: Array<{ name: string; icon: IconKey; route: string }> = [
   { name: 'Dashboard', icon: 'dashboard', route: '/' },
   { name: 'Neighbors', icon: 'neighbors', route: '/neighbors' },
   { name: 'Statistics', icon: 'statistics', route: '/statistics' },
+  { name: 'GPS', icon: 'gps', route: '/gps' },
   { name: 'System Stats', icon: 'system-stats', route: '/system-stats' },
   { name: 'Sessions', icon: 'sessions', route: '/sessions' },
   { name: 'Configuration', icon: 'configuration', route: '/configuration' },
@@ -396,7 +399,7 @@ const dutyCycleBarStyle = computed(() => {
           <p class="text-content-muted text-xs uppercase mb-2">Monitoring</p>
           <div class="space-y-2 mb-3">
             <button
-              v-for="item in sidebarItems.slice(0, 3)"
+              v-for="item in sidebarItems.slice(0, 4)"
               :key="item.name"
               @click="navigateToRoute(item.route)"
               :class="
@@ -416,7 +419,7 @@ const dutyCycleBarStyle = computed(() => {
           <p class="text-content-muted text-xs uppercase mb-2">System</p>
           <div class="space-y-2 mb-3">
             <button
-              v-for="item in sidebarItems.slice(3, 7)"
+              v-for="item in sidebarItems.slice(4, 8)"
               :key="item.name"
               @click="navigateToRoute(item.route)"
               :class="
@@ -436,7 +439,7 @@ const dutyCycleBarStyle = computed(() => {
           <p class="text-content-muted text-xs uppercase mb-2">Room Servers &amp; Companions</p>
           <div class="space-y-2 mb-3">
             <button
-              v-for="item in sidebarItems.slice(7, 9)"
+              v-for="item in sidebarItems.slice(8, 10)"
               :key="item.name"
               @click="navigateToRoute(item.route)"
               :class="
@@ -456,7 +459,7 @@ const dutyCycleBarStyle = computed(() => {
           <p class="text-content-muted text-xs uppercase mb-2">Other</p>
           <div class="space-y-2 mb-3">
             <button
-              v-for="item in sidebarItems.slice(9)"
+              v-for="item in sidebarItems.slice(10)"
               :key="item.name"
               @click="navigateToRoute(item.route)"
               :class="

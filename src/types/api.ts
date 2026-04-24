@@ -203,12 +203,132 @@ export interface SystemStats {
         tls?: {
           enabled?: boolean;
           insecure?: boolean;
-        }
+        };
       }>;
     };
   };
   // Include other possible fields that might be returned by stats_getter
   [key: string]: unknown;
+}
+
+export interface GPSPosition {
+  latitude?: number | null;
+  longitude?: number | null;
+  altitude_m?: number | null;
+  geoid_separation_m?: number | null;
+  source?: string;
+}
+
+export interface GPSSource {
+  type?: string;
+  device?: string | null;
+  baud_rate?: number | null;
+  source_path?: string | null;
+  read_timeout_seconds?: number | null;
+  poll_interval_seconds?: number | null;
+  stale_after_seconds?: number | null;
+  [key: string]: unknown;
+}
+
+export interface GPSStatus {
+  state?: string;
+  fix_valid?: boolean;
+  stale?: boolean;
+  age_seconds?: number | null;
+  last_update?: string | null;
+  last_error?: string | null;
+}
+
+export interface GPSFix {
+  valid?: boolean;
+  status?: string | null;
+  quality?: number | null;
+  quality_label?: string | null;
+  gsa_fix_type?: number | null;
+  gsa_fix_type_label?: string | null;
+}
+
+export interface GPSPositionMeta {
+  source?: string;
+  source_label?: string;
+  policy?: string;
+  manual_config_available?: boolean;
+  gps_fix_valid?: boolean;
+}
+
+export interface GPSMotion {
+  speed_knots?: number | null;
+  speed_kmh?: number | null;
+  course_degrees?: number | null;
+  magnetic_variation_degrees?: number | null;
+}
+
+export interface GPSAccuracy {
+  hdop?: number | null;
+  pdop?: number | null;
+  vdop?: number | null;
+}
+
+export interface GPSTime {
+  utc_time?: string | null;
+  date?: string | null;
+  datetime_utc?: string | null;
+}
+
+export interface GPSSatellite {
+  prn?: string | number | null;
+  elevation_degrees?: number | null;
+  azimuth_degrees?: number | null;
+  snr_db?: number | null;
+  [key: string]: unknown;
+}
+
+export interface GPSSatellites {
+  used_count?: number | null;
+  used_prns?: Array<string | number>;
+  in_view_count?: number | null;
+  in_view?: GPSSatellite[];
+  snr?: {
+    min?: number | null;
+    max?: number | null;
+    avg?: number | null;
+  };
+}
+
+export interface GPSNMEASentence {
+  timestamp?: string | null;
+  sentence_type?: string | null;
+  sentence?: string | null;
+}
+
+export interface GPSNMEA {
+  last_sentence?: string | null;
+  last_sentence_type?: string | null;
+  last_talker?: string | null;
+  seen_sentence_types?: string[];
+  sentence_counters?: Record<string, number>;
+  valid_checksum_count?: number;
+  invalid_checksum_count?: number;
+  missing_checksum_count?: number;
+  recent_sentences?: GPSNMEASentence[];
+}
+
+export interface GPSDiagnostics {
+  enabled?: boolean;
+  running?: boolean;
+  source?: GPSSource;
+  status?: GPSStatus;
+  fix?: GPSFix;
+  position?: GPSPosition;
+  gps_position?: GPSPosition;
+  manual_position?: GPSPosition | null;
+  position_meta?: GPSPositionMeta;
+  motion?: GPSMotion;
+  accuracy?: GPSAccuracy;
+  time?: GPSTime;
+  satellites?: GPSSatellites;
+  nmea?: GPSNMEA;
+  raw_attributes?: Record<string, unknown>;
 }
 
 export interface LogEntry {

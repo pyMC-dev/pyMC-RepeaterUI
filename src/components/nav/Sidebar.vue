@@ -19,10 +19,22 @@ import TerminalIcon from '../icons/terminal.vue';
 import StatsIcon from '../icons/stats.vue';
 import SystemIcon from '../icons/system.vue';
 import NeighborsIcon from '../icons/neighbors.vue';
+import GpsIcon from '../icons/gps.vue';
 
 import DutycycleIcon from '../icons/dutycycle.vue';
 
 defineOptions({ name: 'SidebarNav' });
+
+interface AdvertRateLimitStats {
+  adaptive?: {
+    current_tier?: string;
+  };
+  stats?: {
+    adverts_allowed?: number;
+    adverts_dropped?: number;
+  };
+  active_penalties?: Record<string, unknown>;
+}
 
 const router = useRouter();
 const route = useRoute();
@@ -47,7 +59,7 @@ const activePenalties = ref(0);
 const fetchAdaptiveTier = async () => {
   try {
     const response = await ApiService.get('/advert_rate_limit_stats');
-    const data = response?.data as any;
+    const data = response?.data as AdvertRateLimitStats | undefined;
     currentTier.value =
       typeof data?.adaptive?.current_tier === 'string' ? data.adaptive.current_tier : 'unknown';
     advertsAllowed.value = data?.stats?.adverts_allowed || 0;
@@ -107,6 +119,7 @@ const iconComponents = {
   dashboard: DashboardIcon,
   neighbors: NeighborsIcon,
   statistics: StatsIcon,
+  gps: GpsIcon,
   'system-stats': SystemIcon,
   sessions: SystemIcon, // Reuse SystemIcon for sessions
   configuration: ConfigurationsIcon,
@@ -123,6 +136,7 @@ const sidebarItems: Array<{ name: string; icon: IconKey; route: string }> = [
   { name: 'Dashboard', icon: 'dashboard', route: '/' },
   { name: 'Neighbors', icon: 'neighbors', route: '/neighbors' },
   { name: 'Statistics', icon: 'statistics', route: '/statistics' },
+  { name: 'GPS', icon: 'gps', route: '/gps' },
   { name: 'System Stats', icon: 'system-stats', route: '/system-stats' },
   { name: 'Sessions', icon: 'sessions', route: '/sessions' },
   { name: 'Configuration', icon: 'configuration', route: '/configuration' },
@@ -267,11 +281,7 @@ const coreVersion = computed(() => parseVersion(systemStore.coreVersion));
     <div class="glass-card h-full p-6">
       <div class="mb-12">
         <div class="mb-3 flex justify-center">
-          <img
-            src="@/assets/pymclogo.png"
-            alt="pyMC"
-            class="h-[6.5rem]"
-          />
+          <img src="@/assets/pymclogo.png" alt="pyMC" class="h-[6.5rem]" />
         </div>
         <p class="text-content-secondary dark:text-content-muted text-sm">
           {{ systemStore.nodeName }}
@@ -347,7 +357,7 @@ const coreVersion = computed(() => parseVersion(systemStore.coreVersion));
         <p class="text-content-muted dark:text-content-muted text-xs uppercase mb-4">Monitoring</p>
         <div class="space-y-2">
           <button
-            v-for="item in sidebarItems.slice(0, 3)"
+            v-for="item in sidebarItems.slice(0, 4)"
             :key="item.name"
             @click="navigateToRoute(item.route)"
             :class="
@@ -374,7 +384,7 @@ const coreVersion = computed(() => parseVersion(systemStore.coreVersion));
         <p class="text-content-muted dark:text-content-muted text-xs uppercase mb-4">System</p>
         <div class="space-y-2">
           <button
-            v-for="item in sidebarItems.slice(3, 7)"
+            v-for="item in sidebarItems.slice(4, 8)"
             :key="item.name"
             @click="navigateToRoute(item.route)"
             :class="
@@ -403,7 +413,7 @@ const coreVersion = computed(() => parseVersion(systemStore.coreVersion));
         </p>
         <div class="space-y-2">
           <button
-            v-for="item in sidebarItems.slice(7, 9)"
+            v-for="item in sidebarItems.slice(8, 10)"
             :key="item.name"
             @click="navigateToRoute(item.route)"
             :class="
@@ -430,7 +440,7 @@ const coreVersion = computed(() => parseVersion(systemStore.coreVersion));
         <p class="text-content-muted dark:text-content-muted text-xs uppercase mb-4">Other</p>
         <div class="space-y-2">
           <button
-            v-for="item in sidebarItems.slice(9)"
+            v-for="item in sidebarItems.slice(10)"
             :key="item.name"
             @click="navigateToRoute(item.route)"
             :class="
@@ -678,7 +688,7 @@ const coreVersion = computed(() => parseVersion(systemStore.coreVersion));
         </svg>
         Last Updated: {{ currentTime }}
       </div>
-      
+
       <div class="flex flex-col items-center justify-center mb-4">
         <p
           class="text-content-muted dark:text-content-muted text-[10px] mb-1 tracking-wide uppercase opacity-70"

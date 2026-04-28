@@ -121,7 +121,7 @@ const iconComponents = {
 
 type IconKey = keyof typeof iconComponents;
 
-const sidebarItems: Array<{ name: string; icon: IconKey; route: string }> = [
+const baseSidebarItems: Array<{ name: string; icon: IconKey; route: string }> = [
   { name: 'Dashboard', icon: 'dashboard', route: '/' },
   { name: 'Neighbors', icon: 'neighbors', route: '/neighbors' },
   { name: 'Statistics', icon: 'statistics', route: '/statistics' },
@@ -135,6 +135,15 @@ const sidebarItems: Array<{ name: string; icon: IconKey; route: string }> = [
   { name: 'Logs', icon: 'logs', route: '/logs' },
   { name: 'Help', icon: 'help', route: '/help' },
 ];
+
+const isGpsEnabled = computed(() => {
+  const stats = systemStore.stats as { gps?: { enabled?: boolean }; config?: { gps?: { enabled?: boolean } } } | null;
+  return stats?.gps?.enabled === true || stats?.config?.gps?.enabled === true;
+});
+
+const sidebarItems = computed(() =>
+  baseSidebarItems.filter((item) => item.route !== '/gps' || isGpsEnabled.value),
+);
 
 const modeOptions = [
   {

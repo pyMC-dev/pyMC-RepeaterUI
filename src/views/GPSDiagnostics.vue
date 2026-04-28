@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue';
-import ApiService from '@/utils/api';
-import { useManagedPolling } from '@/composables/useManagedPolling';
+import { computed, onMounted, onUnmounted, ref } from 'vue';
+import ApiService, { API_SERVER_URL } from '@/utils/api';
+import { getToken } from '@/utils/auth';
 import type { GPSDiagnostics, GPSSatellite } from '@/types/api';
 
 defineOptions({ name: 'GPSDiagnosticsView' });
@@ -13,6 +13,7 @@ const isLoading = ref(true);
 const error = ref<string | null>(null);
 const lastLoaded = ref<Date | null>(null);
 const showRawSnapshot = ref(false);
+const eventSource = ref<EventSource | null>(null);
 
 const status = computed(() => gps.value?.status ?? {});
 const fix = computed(() => gps.value?.fix ?? {});
@@ -37,6 +38,13 @@ const satellites = computed(() => gps.value?.satellites ?? {});
 const nmea = computed(() => gps.value?.nmea ?? {});
 const source = computed(() => gps.value?.source ?? {});
 
+const applyGpsSnapshot = (snapshot: GPSDiagnostics | null) => {
+  gps.value = snapshot;
+  lastLoaded.value = new Date();
+  error.value = null;
+  isLoading.value = false;
+};
+
 const fetchGps = async () => {
   try {
     if (!gps.value) {
@@ -49,8 +57,7 @@ const fetchGps = async () => {
       throw new Error(response.error || 'GPS API error');
     }
 
-    gps.value = response.data ?? null;
-    lastLoaded.value = new Date();
+    applyGpsSnapshot(response.data ?? null);
   } catch (err) {
     error.value = err instanceof Error ? err.message : 'Failed to load GPS diagnostics';
   } finally {
@@ -58,8 +65,61 @@ const fetchGps = async () => {
   }
 };
 
-const { runNow } = useManagedPolling(fetchGps, {
-  intervalMs: 2500,
+const closeEventSource = () => {
+  if (eventSource.value) {
+    eventSource.value.close();
+    eventSource.value = null;
+  }
+};
+
+const connectEventSource = () => {
+  closeEventSource();
+
+  const token = getToken();
+  const tokenParam = token ? `?token=${encodeURIComponent(token)}` : '';
+  eventSource.value = new EventSource(`${API_SERVER_URL}/api/gps-stream${tokenParam}`);
+
+  eventSource.value.onmessage = (event: MessageEvent<string>) => {
+    try {
+      const parsed: unknown = JSON.parse(event.data);
+      if (!parsed || typeof parsed !== 'object') {
+        return;
+      }
+
+      const payload = parsed as {
+        type?: string;
+        data?: GPSDiagnostics | null;
+        success?: boolean;
+      };
+
+      if (payload.type === 'snapshot') {
+        applyGpsSnapshot(payload.data ?? null);
+        return;
+      }
+
+      if (payload.success === true) {
+        applyGpsSnapshot(payload.data ?? null);
+      }
+    } catch (parseError) {
+      console.error('Failed to parse GPS SSE payload:', parseError);
+    }
+  };
+
+  eventSource.value.onerror = () => {
+    if (!gps.value) {
+      error.value = 'GPS live stream disconnected. Reconnecting...';
+      isLoading.value = false;
+    }
+  };
+};
+
+onMounted(async () => {
+  await fetchGps();
+  connectEventSource();
+});
+
+onUnmounted(() => {
+  closeEventSource();
 });
 
 const asNumber = (value: unknown): number | null => {
@@ -268,7 +328,7 @@ const rawSnapshot = computed(() => JSON.stringify(gps.value ?? {}, null, 2));
         type="button"
         class="rounded-[10px] border border-stroke-subtle dark:border-white/10 bg-white/80 dark:bg-white/10 px-4 py-2 text-sm font-semibold text-content-primary dark:text-white transition-colors hover:bg-white dark:hover:bg-white/20 disabled:cursor-not-allowed disabled:opacity-60"
         :disabled="isLoading"
-        @click="runNow"
+        @click="fetchGps"
       >
         {{ isLoading ? 'Refreshing' : 'Refresh' }}
       </button>

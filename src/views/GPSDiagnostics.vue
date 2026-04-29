@@ -500,17 +500,22 @@ const createSatelliteGlobe = (): GlobeRenderer => {
     const lat = (latitude * Math.PI) / 180;
     const lon = (longitude * Math.PI) / 180;
     return new THREE.Vector3(
-      Math.cos(lat) * Math.sin(lon),
-      Math.sin(lat),
       Math.cos(lat) * Math.cos(lon),
+      Math.sin(lat),
+      -Math.cos(lat) * Math.sin(lon),
     ).multiplyScalar(radius);
   };
 
   const localBasis = (latitude: number, longitude: number) => {
+    const lat = (latitude * Math.PI) / 180;
     const lon = (longitude * Math.PI) / 180;
     const up = latLonVector(latitude, longitude, 1).normalize();
-    const east = new THREE.Vector3(Math.cos(lon), 0, -Math.sin(lon)).normalize();
-    const north = up.clone().cross(east).normalize();
+    const east = new THREE.Vector3(-Math.sin(lon), 0, -Math.cos(lon)).normalize();
+    const north = new THREE.Vector3(
+      -Math.sin(lat) * Math.cos(lon),
+      Math.cos(lat),
+      Math.sin(lat) * Math.sin(lon),
+    ).normalize();
     return { east, north, up };
   };
 

@@ -27,8 +27,35 @@ type GlobeRenderer = {
   dispose: () => void;
 };
 
+type StableSatRow = {
+  prn: string;
+  data: GPSSatellite;
+  used: boolean;
+  stale: boolean;
+  staleTimer: ReturnType<typeof setTimeout> | null;
+};
+
 const EARTH_TEXTURE_URL =
   'https://cdn.jsdelivr.net/gh/mrdoob/three.js@r128/examples/textures/planets/earth_atmos_2048.jpg';
+
+// ── Page tabs ────────────────────────────────────────────────────────────────
+type PageTab = 'overview' | 'satellites' | 'details';
+const activeTab = ref<PageTab>('overview');
+
+// ── Globe card inner tab ─────────────────────────────────────────────────────
+type GlobeTab = 'globe' | 'table';
+const activeGlobeTab = ref<GlobeTab>('globe');
+
+// ── Accordion open state (detail groups) ────────────────────────────────────
+const openGroups = ref(new Set<string>());
+const toggleGroup = (title: string) => {
+  if (openGroups.value.has(title)) {
+    openGroups.value.delete(title);
+  } else {
+    openGroups.value.add(title);
+  }
+  openGroups.value = new Set(openGroups.value);
+};
 
 const gps = ref<GPSDiagnostics | null>(null);
 const isLoading = ref(true);
@@ -226,6 +253,12 @@ const summaryCards = computed(() => [
     note: status.value.last_update || 'last update unknown',
     valueClass: status.value.stale ? 'text-secondary' : 'text-content-heading dark:text-white',
   },
+  {
+    label: 'GPS Time',
+    value: gpsTime.value.utc_time ?? 'n/a',
+    note: gpsTime.value.date ?? 'no date',
+    valueClass: gpsTime.value.utc_time ? 'text-content-heading dark:text-white' : 'text-content-muted',
+  },
 ]);
 
 const detailGroups = computed<Array<{ title: string; rows: DetailRow[] }>>(() => [
@@ -311,6 +344,63 @@ const detailGroups = computed<Array<{ title: string; rows: DetailRow[] }>>(() =>
 const visibleSatellites = computed(() => satellites.value.in_view ?? []);
 const recentSentences = computed(() => nmea.value.recent_sentences ?? []);
 
+// Stable satellite table — rows persist and fade out instead of blinking away
+const stableSatMap = ref(new Map<string, StableSatRow>());
+const stableSatellites = computed(() =>
+  [...stableSatMap.value.values()].sort((a, b) => a.prn.localeCompare(b.prn, undefined, { numeric: true })),
+);
+
+const STALE_LINGER_MS = 4000;
+
+watch(
+  satellites,
+  (sat) => {
+    const inView: GPSSatellite[] = sat?.in_view ?? [];
+    const usedSet = new Set((sat?.used_prns ?? []).map(String));
+    const seenPrns = new Set<string>();
+
+    for (const s of inView) {
+      const prn = String(s.prn ?? '?');
+      seenPrns.add(prn);
+      const existing = stableSatMap.value.get(prn);
+      if (existing) {
+        // Clear any pending removal timer — satellite is back
+        if (existing.staleTimer !== null) {
+          clearTimeout(existing.staleTimer);
+          existing.staleTimer = null;
+        }
+        existing.data = s;
+        existing.used = usedSet.has(prn);
+        existing.stale = false;
+      } else {
+        stableSatMap.value.set(prn, {
+          prn,
+          data: s,
+          used: usedSet.has(prn),
+          stale: false,
+          staleTimer: null,
+        });
+      }
+    }
+
+    // Mark rows that are no longer in the feed as stale; remove after linger
+    for (const [prn, row] of stableSatMap.value) {
+      if (!seenPrns.has(prn) && !row.stale) {
+        row.stale = true;
+        row.staleTimer = setTimeout(() => {
+          stableSatMap.value.delete(prn);
+          // Trigger reactivity
+          stableSatMap.value = new Map(stableSatMap.value);
+        }, STALE_LINGER_MS);
+      }
+    }
+
+    // Trigger reactivity for in-place mutations
+    stableSatMap.value = new Map(stableSatMap.value);
+  },
+  { deep: false },
+);
+
 const skySatellites = computed<GlobeSatellite[]>(() => {
   const usedPrns = new Set((satellites.value.used_prns ?? []).map(String));
   return visibleSatellites.value
@@ -387,14 +477,29 @@ const createSatelliteGlobe = (): GlobeRenderer => {
     powerPreference: 'low-power',
   });
   const controls = new OrbitControls(camera, renderer.domElement);
+  type SatEntry = {
+    mesh: THREE.Mesh;
+    meshMat: THREE.MeshBasicMaterial;
+    line: THREE.Line;
+    lineMat: THREE.LineBasicMaterial;
+    linePosAttr: THREE.BufferAttribute;
+    labelSprite: THREE.Sprite;
+    labelMat: THREE.SpriteMaterial;
+    opacity: number;
+    targetOpacity: number;
+    pos: THREE.Vector3;
+    targetPos: THREE.Vector3;
+  };
+
   const root = new THREE.Group();
+  const receiverGroup = new THREE.Group();
   const satelliteGroup = new THREE.Group();
   const linkGroup = new THREE.Group();
   const raycaster = new THREE.Raycaster();
   const pointer = new THREE.Vector2();
   const hoverScale = new THREE.Vector3();
   const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-  let satelliteMeshes: THREE.Mesh[] = [];
+  const satelliteEntries = new Map<string, SatEntry>();
   let hoveredMesh: THREE.Mesh | null = null;
   let lastPointer: PointerEvent | null = null;
   let animationId = 0;
@@ -458,7 +563,7 @@ const createSatelliteGlobe = (): GlobeRenderer => {
     }),
   );
 
-  root.add(earth, grid, atmosphere, linkGroup, satelliteGroup);
+  root.add(earth, grid, atmosphere, linkGroup, satelliteGroup, receiverGroup);
   scene.add(root);
 
   const resize = () => {
@@ -550,7 +655,13 @@ const createSatelliteGlobe = (): GlobeRenderer => {
     context.closePath();
   };
 
-  const addLabel = (text: string, labelPosition: THREE.Vector3, color: string, scale = 1) => {
+  const addLabel = (
+    text: string,
+    labelPosition: THREE.Vector3,
+    color: string,
+    scale = 1,
+    targetGroup: THREE.Group = satelliteGroup,
+  ) => {
     const labelCanvas = document.createElement('canvas');
     labelCanvas.width = 192;
     labelCanvas.height = 76;
@@ -582,7 +693,8 @@ const createSatelliteGlobe = (): GlobeRenderer => {
     sprite.position.copy(labelPosition);
     sprite.scale.set(0.3 * scale, 0.12 * scale, 1);
     sprite.renderOrder = 10;
-    satelliteGroup.add(sprite);
+    targetGroup.add(sprite);
+    return sprite;
   };
 
   const hideTooltip = (clearPointer = false) => {
@@ -610,7 +722,8 @@ const createSatelliteGlobe = (): GlobeRenderer => {
     pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
     pointer.y = -(((event.clientY - rect.top) / rect.height) * 2 - 1);
     raycaster.setFromCamera(pointer, camera);
-    const hit = raycaster.intersectObjects(satelliteMeshes, false)[0];
+    const meshes = [...satelliteEntries.values()].map((e) => e.mesh);
+    const hit = raycaster.intersectObjects(meshes, false)[0];
     hoveredMesh = hit ? (hit.object as THREE.Mesh) : null;
     if (hoveredMesh) {
       showTooltip(hoveredMesh, event);
@@ -619,11 +732,11 @@ const createSatelliteGlobe = (): GlobeRenderer => {
     }
   };
 
-  const addSatellite = (
+  const computeSatPosition = (
     satellite: GlobeSatellite,
     basis: ReturnType<typeof localBasis>,
     userPosition: THREE.Vector3,
-  ) => {
+  ): THREE.Vector3 => {
     const az = (satellite.azimuth * Math.PI) / 180;
     const el = (Math.max(0, Math.min(90, satellite.elevation)) * Math.PI) / 180;
     const horizon = basis.north
@@ -634,25 +747,64 @@ const createSatelliteGlobe = (): GlobeRenderer => {
       .multiplyScalar(Math.cos(el))
       .add(basis.up.clone().multiplyScalar(Math.sin(el)))
       .normalize();
-    const satPosition = userPosition.clone().add(direction.multiplyScalar(0.62));
+    return userPosition.clone().add(direction.multiplyScalar(0.62));
+  };
+
+  const createSatEntry = (
+    satellite: GlobeSatellite,
+    basis: ReturnType<typeof localBasis>,
+    userPosition: THREE.Vector3,
+  ): SatEntry => {
+    const satPosition = computeSatPosition(satellite, basis, userPosition);
     const color = satellite.used
       ? cssVar('--color-accent-green', '#a5e5b6')
       : cssVar('--color-primary', '#aae8e8');
     const radius = 0.024 + (satellite.snr / 60) * 0.042;
-    const marker = new THREE.Mesh(
-      new THREE.SphereGeometry(radius, 16, 12),
-      new THREE.MeshBasicMaterial({ color: new THREE.Color(color) }),
-    );
-    marker.position.copy(satPosition);
-    marker.userData = { satellite, used: satellite.used };
-    satelliteMeshes.push(marker);
-    satelliteGroup.add(marker);
-    addLine(
-      [userPosition.clone().multiplyScalar(1.012), satPosition],
-      color,
-      satellite.used ? 0.46 : 0.26,
-    );
-    addLabel(satellite.prn, satPosition.clone().multiplyScalar(1.035), color, 0.88);
+    const meshMat = new THREE.MeshBasicMaterial({
+      color: new THREE.Color(color),
+      transparent: true,
+      opacity: 0,
+    });
+    const mesh = new THREE.Mesh(new THREE.SphereGeometry(radius, 16, 12), meshMat);
+    mesh.position.copy(satPosition);
+    mesh.userData = { satellite, used: satellite.used };
+    satelliteGroup.add(mesh);
+
+    const anchorPos = userPosition.clone().multiplyScalar(1.012);
+    const linePosArray = new Float32Array([
+      anchorPos.x, anchorPos.y, anchorPos.z,
+      satPosition.x, satPosition.y, satPosition.z,
+    ]);
+    const linePosAttr = new THREE.BufferAttribute(linePosArray, 3);
+    linePosAttr.setUsage(THREE.DynamicDrawUsage);
+    const lineGeo = new THREE.BufferGeometry();
+    lineGeo.setAttribute('position', linePosAttr);
+    const lineMat = new THREE.LineBasicMaterial({
+      color: new THREE.Color(color),
+      transparent: true,
+      opacity: 0,
+    });
+    const line = new THREE.Line(lineGeo, lineMat);
+    linkGroup.add(line);
+
+    const labelPos = satPosition.clone().multiplyScalar(1.035);
+    const labelMat = new THREE.SpriteMaterial({ transparent: true, opacity: 0, depthTest: false, depthWrite: false });
+    // Reuse addLabel canvas rendering but override the material after
+    const labelSprite = addLabel(satellite.prn, labelPos, color, 0.88) as THREE.Sprite;
+    // Replace the auto-created material with our trackable one that shares the same texture
+    const existingMat = labelSprite.material as THREE.SpriteMaterial;
+    labelMat.map = existingMat.map;
+    existingMat.dispose();
+    labelSprite.material = labelMat;
+
+    return {
+      mesh, meshMat,
+      line, lineMat, linePosAttr,
+      labelSprite, labelMat,
+      opacity: 0, targetOpacity: 1,
+      pos: satPosition.clone(),
+      targetPos: satPosition.clone(),
+    };
   };
 
   const addReceiver = (latitude: number, longitude: number) => {
@@ -664,8 +816,8 @@ const createSatelliteGlobe = (): GlobeRenderer => {
       new THREE.MeshBasicMaterial({ color: new THREE.Color(receiverColor) }),
     );
     receiver.position.copy(userPosition);
-    satelliteGroup.add(receiver);
-    addLabel('YOU', userPosition.clone().multiplyScalar(1.08), receiverColor, 1);
+    receiverGroup.add(receiver);
+    addLabel('YOU', userPosition.clone().multiplyScalar(1.08), receiverColor, 1, receiverGroup);
 
     const ringPoints: THREE.Vector3[] = [];
     for (let index = 0; index <= 96; index += 1) {
@@ -677,18 +829,27 @@ const createSatelliteGlobe = (): GlobeRenderer => {
           .add(basis.east.clone().multiplyScalar(Math.sin(angle) * 0.62)),
       );
     }
-    addLine(ringPoints, receiverColor, 0.28);
+    // Ring line goes in receiverGroup
+    const ringGeo = new THREE.BufferGeometry().setFromPoints(ringPoints);
+    const ringMat = new THREE.LineBasicMaterial({
+      color: new THREE.Color(receiverColor),
+      transparent: true,
+      opacity: 0.28,
+    });
+    receiverGroup.add(new THREE.Line(ringGeo, ringMat));
     return { basis, userPosition };
   };
 
   const update = (data: GPSDiagnostics | null) => {
     const latitude = asNumber(data?.position?.latitude);
     const longitude = asNumber(data?.position?.longitude);
-    const pointerToRestore = lastPointer;
-    satelliteMeshes = [];
-    hoveredMesh = null;
-    clearGroup(satelliteGroup);
-    clearGroup(linkGroup);
+
+    // Fade out all existing entries; active ones will be revived below
+    for (const entry of satelliteEntries.values()) {
+      entry.targetOpacity = 0;
+    }
+
+    clearGroup(receiverGroup);
 
     if (latitude === null || longitude === null) {
       globeStatus.value = 'Waiting for receiver position';
@@ -701,16 +862,40 @@ const createSatelliteGlobe = (): GlobeRenderer => {
     root.quaternion.copy(new THREE.Quaternion().setFromUnitVectors(userDirection, targetDirection));
 
     const { basis, userPosition } = addReceiver(latitude, longitude);
-    skySatellites.value.forEach((satellite) => addSatellite(satellite, basis, userPosition));
+
+    for (const satellite of skySatellites.value) {
+      const key = satellite.prn;
+      const newPos = computeSatPosition(satellite, basis, userPosition);
+      const color = satellite.used
+        ? cssVar('--color-accent-green', '#a5e5b6')
+        : cssVar('--color-primary', '#aae8e8');
+      const lineOpacity = satellite.used ? 0.46 : 0.26;
+
+      const existing = satelliteEntries.get(key);
+      if (existing) {
+        // Update target position and colors in-place
+        existing.targetPos.copy(newPos);
+        existing.targetOpacity = 1;
+        existing.meshMat.color.set(color);
+        existing.lineMat.color.set(color);
+        existing.mesh.userData = { satellite, used: satellite.used };
+        // Update line anchor (receiver side stays the same but sat side moves)
+        existing.linePosAttr.setXYZ(1, newPos.x, newPos.y, newPos.z);
+        existing.linePosAttr.needsUpdate = true;
+        // Update label position
+        existing.labelSprite.position.copy(newPos.clone().multiplyScalar(1.035));
+        // Target line opacity to match used state
+        (existing.lineMat as THREE.LineBasicMaterial & { _targetOpacity?: number })._targetOpacity = lineOpacity;
+      } else {
+        // New satellite – create entry, will fade in
+        const entry = createSatEntry(satellite, basis, userPosition);
+        satelliteEntries.set(key, entry);
+      }
+    }
+
     globeStatus.value = skySatellites.value.length
       ? `${skySatellites.value.length} satellites plotted from GSV az/el using ${formatValue(positionMeta.value.source_label || 'receiver position')}`
       : 'No satellites in view yet';
-
-    if (pointerToRestore) {
-      window.requestAnimationFrame(() => handlePointerMove(pointerToRestore));
-    } else {
-      hideTooltip();
-    }
   };
 
   const resizeObserver = new ResizeObserver(resize);
@@ -728,11 +913,53 @@ const createSatelliteGlobe = (): GlobeRenderer => {
       grid.rotation.y += 0.0005;
     }
     controls.update();
-    satelliteMeshes.forEach((mesh) => {
-      const target = mesh === hoveredMesh ? 1.75 : 1;
-      hoverScale.set(target, target, target);
-      mesh.scale.lerp(hoverScale, 0.18);
-    });
+
+    const toRemove: string[] = [];
+    for (const [key, entry] of satelliteEntries) {
+      // Lerp opacity
+      entry.opacity += (entry.targetOpacity - entry.opacity) * 0.08;
+      const alpha = Math.max(0, Math.min(1, entry.opacity));
+      entry.meshMat.opacity = alpha;
+      const targetLineAlpha = ((entry.lineMat as THREE.LineBasicMaterial & { _targetOpacity?: number })._targetOpacity ?? 0.46) * alpha;
+      entry.lineMat.opacity = targetLineAlpha;
+      entry.labelMat.opacity = alpha;
+
+      // Lerp position
+      entry.pos.lerp(entry.targetPos, 0.12);
+      entry.mesh.position.copy(entry.pos);
+      entry.labelSprite.position.copy(entry.pos.clone().multiplyScalar(1.035));
+      entry.linePosAttr.setXYZ(1, entry.pos.x, entry.pos.y, entry.pos.z);
+      entry.linePosAttr.needsUpdate = true;
+
+      // Hover scale
+      const scaleTarget = entry.mesh === hoveredMesh ? 1.75 : 1;
+      hoverScale.set(scaleTarget, scaleTarget, scaleTarget);
+      entry.mesh.scale.lerp(hoverScale, 0.18);
+
+      // Remove fully faded-out entries
+      if (entry.targetOpacity === 0 && alpha < 0.01) {
+        toRemove.push(key);
+      }
+    }
+
+    for (const key of toRemove) {
+      const entry = satelliteEntries.get(key)!;
+      satelliteGroup.remove(entry.mesh);
+      linkGroup.remove(entry.line);
+      satelliteGroup.remove(entry.labelSprite);
+      entry.mesh.geometry.dispose();
+      entry.meshMat.dispose();
+      entry.line.geometry.dispose();
+      entry.lineMat.dispose();
+      entry.labelMat.map?.dispose();
+      entry.labelMat.dispose();
+      if (hoveredMesh === entry.mesh) {
+        hoveredMesh = null;
+        hoveredGlobeSatellite.value = null;
+      }
+      satelliteEntries.delete(key);
+    }
+
     renderer.render(scene, camera);
     animationId = window.requestAnimationFrame(animate);
   };
@@ -747,6 +974,16 @@ const createSatelliteGlobe = (): GlobeRenderer => {
       canvas.removeEventListener('pointerleave', handlePointerLeave);
       canvas.removeEventListener('wheel', preventWheelScroll);
       controls.dispose();
+      for (const entry of satelliteEntries.values()) {
+        entry.mesh.geometry.dispose();
+        entry.meshMat.dispose();
+        entry.line.geometry.dispose();
+        entry.lineMat.dispose();
+        entry.labelMat.map?.dispose();
+        entry.labelMat.dispose();
+      }
+      satelliteEntries.clear();
+      clearGroup(receiverGroup);
       clearGroup(satelliteGroup);
       clearGroup(linkGroup);
       root.traverse(disposeObject);
@@ -762,6 +999,15 @@ const refreshGlobe = async (data: GPSDiagnostics | null = gps.value) => {
     return;
   }
   try {
+    // If the stage was hidden (v-show) the canvas size may be 0; dispose so it
+    // gets cleanly recreated at the correct size on reveal.
+    if (globeRenderer && globeStage.value) {
+      const rect = globeStage.value.getBoundingClientRect();
+      if (rect.width === 0 || rect.height === 0) {
+        globeRenderer.dispose();
+        globeRenderer = null;
+      }
+    }
     if (!globeRenderer) {
       globeRenderer = createSatelliteGlobe();
     }
@@ -785,6 +1031,24 @@ watch(
   { flush: 'post' },
 );
 
+watch(
+  activeTab,
+  (tab) => {
+    if (tab === 'overview') {
+      void refreshGlobe();
+    }
+  },
+);
+
+watch(
+  activeGlobeTab,
+  (tab) => {
+    if (tab === 'globe') {
+      void refreshGlobe();
+    }
+  },
+);
+
 onBeforeUnmount(() => {
   globeRenderer?.dispose();
   globeRenderer = null;
@@ -795,6 +1059,7 @@ const rawSnapshot = computed(() => JSON.stringify(gps.value ?? {}, null, 2));
 
 <template>
   <div class="space-y-4">
+    <!-- ── Header ─────────────────────────────────────────────────────────── -->
     <div class="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
       <div>
         <h1 class="text-2xl font-semibold text-content-heading dark:text-white">GPS Diagnostics</h1>
@@ -802,7 +1067,6 @@ const rawSnapshot = computed(() => JSON.stringify(gps.value ?? {}, null, 2));
           Live NMEA receiver state, parsed fix data, and satellite visibility.
         </p>
       </div>
-
       <button
         type="button"
         class="rounded-[10px] border border-stroke-subtle dark:border-white/10 bg-white/80 dark:bg-white/10 px-4 py-2 text-sm font-semibold text-content-primary dark:text-white transition-colors hover:bg-white dark:hover:bg-white/20 disabled:cursor-not-allowed disabled:opacity-60"
@@ -820,7 +1084,8 @@ const rawSnapshot = computed(() => JSON.stringify(gps.value ?? {}, null, 2));
       {{ error }}
     </div>
 
-    <div class="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+    <!-- ── Summary cards (always visible) ─────────────────────────────────── -->
+    <div class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
       <section v-for="card in summaryCards" :key="card.label" class="glass-card min-h-[118px] p-4">
         <p class="text-xs uppercase text-content-muted">{{ card.label }}</p>
         <p :class="['mt-2 break-words text-xl font-semibold leading-tight', card.valueClass]">
@@ -830,237 +1095,341 @@ const rawSnapshot = computed(() => JSON.stringify(gps.value ?? {}, null, 2));
       </section>
     </div>
 
-    <div class="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1.15fr)_minmax(340px,0.85fr)]">
-      <section class="glass-card p-5">
-        <div class="mb-4 flex items-start justify-between gap-3">
-          <div>
-            <h2 class="text-lg font-semibold text-content-heading dark:text-white">
-              Satellite Globe
-            </h2>
-            <p class="text-xs text-content-muted">
-              {{ skySatellites.length }} satellite{{ skySatellites.length === 1 ? '' : 's' }}
-              plotted from GSV azimuth, elevation, and SNR.
-            </p>
-          </div>
-          <span
-            class="rounded-full border border-primary/30 bg-primary/10 px-3 py-1 text-xs font-semibold text-primary"
-          >
-            {{ globeCountLabel }}
-          </span>
-        </div>
+    <!-- ── Page tabs ───────────────────────────────────────────────────────── -->
+    <div class="page-tabs">
+      <button
+        v-for="tab in ([{ id: 'overview', label: 'Overview' }, { id: 'satellites', label: 'Satellites' }, { id: 'details', label: 'Details' }] as const)"
+        :key="tab.id"
+        type="button"
+        class="page-tab"
+        :class="{ 'page-tab-active': activeTab === tab.id }"
+        @click="activeTab = tab.id"
+      >
+        {{ tab.label }}
+      </button>
+    </div>
 
-        <div ref="globeStage" class="globe-stage">
-          <canvas
-            v-show="!globeWebglFailed"
-            ref="globeCanvas"
-            aria-label="3D globe showing satellites around the current receiver position"
-          ></canvas>
+    <!-- ══════════════════════ OVERVIEW TAB ══════════════════════════════════ -->
+    <div v-show="activeTab === 'overview'">
 
-          <div v-if="globeWebglFailed" class="globe-fallback">
-            <div
-              v-if="skySatellites.length"
-              class="fallback-sky"
-              aria-label="Fallback satellite sky plot"
-            >
-              <div
-                v-for="satellite in skySatellites"
-                :key="satellite.key"
-                class="fallback-sat"
-                :class="{ 'fallback-sat-used': satellite.used }"
-                :style="fallbackSatelliteStyle(satellite)"
-              >
-                <span>{{ satellite.prn }}</span>
+      <!-- Globe card with inner Globe / Table toggle -->
+      <div class="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1.15fr)_minmax(340px,0.85fr)]">
+        <section class="glass-card p-5">
+          <div class="mb-3 flex items-start justify-between gap-3">
+            <div>
+              <h2 class="text-lg font-semibold text-content-heading dark:text-white">
+                Satellites
+              </h2>
+              <p class="text-xs text-content-muted">
+                {{ skySatellites.length }} satellite{{ skySatellites.length === 1 ? '' : 's' }}
+                plotted from GSV azimuth, elevation, and SNR.
+              </p>
+            </div>
+            <div class="flex items-center gap-2">
+              <span class="rounded-full border border-primary/30 bg-primary/10 px-3 py-1 text-xs font-semibold text-primary">
+                {{ globeCountLabel }}
+              </span>
+              <!-- Globe / Table inner toggle -->
+              <div class="inner-tabs">
+                <button type="button" class="inner-tab" :class="{ 'inner-tab-active': activeGlobeTab === 'globe' }" @click="activeGlobeTab = 'globe'">Globe</button>
+                <button type="button" class="inner-tab" :class="{ 'inner-tab-active': activeGlobeTab === 'table' }" @click="activeGlobeTab = 'table'">Table</button>
               </div>
             </div>
-            <div v-else class="sky-empty">No satellites in view yet</div>
           </div>
 
-          <div
-            v-if="hoveredGlobeSatellite"
-            class="globe-tooltip"
-            :style="globeTooltipStyle"
-            role="status"
-            aria-live="polite"
-          >
-            <div class="tooltip-title">SAT {{ hoveredGlobeSatellite.prn }}</div>
-            <div class="tooltip-grid">
-              <span class="tooltip-key">SNR</span>
-              <span class="tooltip-value">{{ formatValue(hoveredGlobeSatellite.snr, 'dB') }}</span>
-              <span class="tooltip-key">Elevation</span>
-              <span class="tooltip-value">{{
-                formatValue(hoveredGlobeSatellite.elevation, 'deg')
-              }}</span>
-              <span class="tooltip-key">Azimuth</span>
-              <span class="tooltip-value">{{
-                formatValue(hoveredGlobeSatellite.azimuth, 'deg')
-              }}</span>
-              <span class="tooltip-key">Used in fix</span>
-              <span class="tooltip-value">{{ formatValue(hoveredGlobeSatellite.used) }}</span>
+          <!-- 3D Globe -->
+          <div v-show="activeGlobeTab === 'globe'">
+            <div ref="globeStage" class="globe-stage">
+              <canvas
+                v-show="!globeWebglFailed"
+                ref="globeCanvas"
+                aria-label="3D globe showing satellites around the current receiver position"
+              ></canvas>
+
+              <div v-if="globeWebglFailed" class="globe-fallback">
+                <div
+                  v-if="skySatellites.length"
+                  class="fallback-sky"
+                  aria-label="Fallback satellite sky plot"
+                >
+                  <div
+                    v-for="satellite in skySatellites"
+                    :key="satellite.key"
+                    class="fallback-sat"
+                    :class="{ 'fallback-sat-used': satellite.used }"
+                    :style="fallbackSatelliteStyle(satellite)"
+                  >
+                    <span>{{ satellite.prn }}</span>
+                  </div>
+                </div>
+                <div v-else class="sky-empty">No satellites in view yet</div>
+              </div>
+
+              <div
+                v-if="hoveredGlobeSatellite"
+                class="globe-tooltip"
+                :style="globeTooltipStyle"
+                role="status"
+                aria-live="polite"
+              >
+                <div class="tooltip-title">SAT {{ hoveredGlobeSatellite.prn }}</div>
+                <div class="tooltip-grid">
+                  <span class="tooltip-key">SNR</span>
+                  <span class="tooltip-value">{{ formatValue(hoveredGlobeSatellite.snr, 'dB') }}</span>
+                  <span class="tooltip-key">Elevation</span>
+                  <span class="tooltip-value">{{ formatValue(hoveredGlobeSatellite.elevation, 'deg') }}</span>
+                  <span class="tooltip-key">Azimuth</span>
+                  <span class="tooltip-value">{{ formatValue(hoveredGlobeSatellite.azimuth, 'deg') }}</span>
+                  <span class="tooltip-key">Used in fix</span>
+                  <span class="tooltip-value">{{ formatValue(hoveredGlobeSatellite.used) }}</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="mt-4 flex flex-wrap items-center justify-between gap-3 text-xs text-content-muted">
+              <span>{{ globeStatus }}</span>
+              <span>Drag to rotate · Scroll to zoom · Hover for details</span>
+            </div>
+            <div class="mt-3 flex flex-wrap gap-3 text-xs text-content-muted">
+              <span class="inline-flex items-center gap-2">
+                <span class="h-2.5 w-2.5 rounded-full bg-accent-green"></span>Used in fix
+              </span>
+              <span class="inline-flex items-center gap-2">
+                <span class="h-2.5 w-2.5 rounded-full bg-primary"></span>In view
+              </span>
+              <span>Last refresh: {{ lastLoaded ? lastLoaded.toLocaleTimeString() : 'n/a' }}</span>
             </div>
           </div>
-        </div>
 
-        <div
-          class="mt-4 flex flex-wrap items-center justify-between gap-3 text-xs text-content-muted"
-        >
-          <span>{{ globeStatus }}</span>
-          <span>Drag to rotate. Scroll to zoom. Hover a satellite for details.</span>
-        </div>
+          <!-- Satellite table (inner tab) -->
+          <div v-show="activeGlobeTab === 'table'">
+            <div class="overflow-x-auto">
+              <table class="w-full min-w-[540px] text-left text-sm">
+                <thead class="border-b border-stroke-subtle text-xs uppercase text-content-muted">
+                  <tr>
+                    <th class="py-2 pr-4 font-semibold">PRN</th>
+                    <th class="py-2 pr-4 font-semibold">Used</th>
+                    <th class="py-2 pr-4 font-semibold">Elevation</th>
+                    <th class="py-2 pr-4 font-semibold">Azimuth</th>
+                    <th class="py-2 pr-4 font-semibold">SNR</th>
+                  </tr>
+                </thead>
+                <tbody class="divide-y divide-stroke-subtle dark:divide-white/10">
+                  <tr
+                    v-for="row in stableSatellites"
+                    :key="row.prn"
+                    class="sat-row"
+                    :class="{ 'sat-row-stale': row.stale }"
+                  >
+                    <td class="py-2 pr-4 font-medium" :class="row.used ? 'text-accent-green' : 'text-content-primary dark:text-white'">
+                      {{ row.prn }}
+                    </td>
+                    <td class="py-2 pr-4">
+                      <span :class="row.used ? 'inline-flex items-center gap-1.5 text-accent-green' : 'text-content-muted'">
+                        <span v-if="row.used" class="h-2 w-2 rounded-full bg-accent-green"></span>
+                        {{ row.used ? 'yes' : '–' }}
+                      </span>
+                    </td>
+                    <td class="py-2 pr-4">{{ formatValue(row.data.elevation_degrees, 'deg') }}</td>
+                    <td class="py-2 pr-4">{{ formatValue(row.data.azimuth_degrees, 'deg') }}</td>
+                    <td class="py-2 pr-4">{{ formatValue(row.data.snr_db, 'dB') }}</td>
+                  </tr>
+                  <tr v-if="stableSatellites.length === 0">
+                    <td colspan="5" class="py-6 text-center text-content-muted">No satellites in view yet</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </section>
 
-        <div class="mt-4 flex flex-wrap gap-3 text-xs text-content-muted">
-          <span class="inline-flex items-center gap-2">
-            <span class="h-2.5 w-2.5 rounded-full bg-accent-green"></span>
-            Used in fix
-          </span>
-          <span class="inline-flex items-center gap-2">
-            <span class="h-2.5 w-2.5 rounded-full bg-primary"></span>
-            In view
-          </span>
-          <span>Last UI refresh: {{ lastLoaded ? lastLoaded.toLocaleTimeString() : 'n/a' }}</span>
-        </div>
-      </section>
+        <!-- Position card -->
+        <section class="glass-card p-5">
+          <h2 class="mb-4 text-lg font-semibold text-content-heading dark:text-white">Position</h2>
+          <div class="space-y-3 text-sm">
+            <div class="grid grid-cols-[150px_minmax(0,1fr)] gap-3">
+              <span class="text-content-muted">Display source</span>
+              <span class="break-words text-content-primary dark:text-white">{{ formatValue(positionMeta.source_label || positionMeta.source) }}</span>
+            </div>
+            <div class="grid grid-cols-[150px_minmax(0,1fr)] gap-3">
+              <span class="text-content-muted">Display location</span>
+              <span class="break-words text-content-primary dark:text-white">{{ formatCoordinate(position.latitude, position.longitude) }}</span>
+            </div>
+            <div class="grid grid-cols-[150px_minmax(0,1fr)] gap-3">
+              <span class="text-content-muted">GPS location</span>
+              <span class="break-words text-content-primary dark:text-white">{{ formatCoordinate(gpsPosition.latitude, gpsPosition.longitude) }}</span>
+            </div>
+            <div class="grid grid-cols-[150px_minmax(0,1fr)] gap-3">
+              <span class="text-content-muted">Manual location</span>
+              <span class="break-words text-content-primary dark:text-white">
+                {{ manualPosition ? formatCoordinate(manualPosition.latitude, manualPosition.longitude) : 'n/a' }}
+              </span>
+            </div>
+            <div class="grid grid-cols-[150px_minmax(0,1fr)] gap-3">
+              <span class="text-content-muted">Policy</span>
+              <span class="break-words text-content-primary dark:text-white">{{ formatValue(positionMeta.policy) }}</span>
+            </div>
+          </div>
+        </section>
+      </div>
+    </div>
 
+    <!-- ══════════════════════ SATELLITES TAB ════════════════════════════════ -->
+    <div v-show="activeTab === 'satellites'">
       <section class="glass-card p-5">
-        <h2 class="mb-4 text-lg font-semibold text-content-heading dark:text-white">Position</h2>
-        <div class="space-y-3 text-sm">
-          <div class="grid grid-cols-[150px_minmax(0,1fr)] gap-3">
-            <span class="text-content-muted">Display source</span>
-            <span class="break-words text-content-primary dark:text-white">
-              {{ formatValue(positionMeta.source_label || positionMeta.source) }}
-            </span>
-          </div>
-          <div class="grid grid-cols-[150px_minmax(0,1fr)] gap-3">
-            <span class="text-content-muted">Display location</span>
-            <span class="break-words text-content-primary dark:text-white">
-              {{ formatCoordinate(position.latitude, position.longitude) }}
-            </span>
-          </div>
-          <div class="grid grid-cols-[150px_minmax(0,1fr)] gap-3">
-            <span class="text-content-muted">GPS location</span>
-            <span class="break-words text-content-primary dark:text-white">
-              {{ formatCoordinate(gpsPosition.latitude, gpsPosition.longitude) }}
-            </span>
-          </div>
-          <div class="grid grid-cols-[150px_minmax(0,1fr)] gap-3">
-            <span class="text-content-muted">Manual location</span>
-            <span class="break-words text-content-primary dark:text-white">
-              {{
-                manualPosition
-                  ? formatCoordinate(manualPosition.latitude, manualPosition.longitude)
-                  : 'n/a'
-              }}
-            </span>
-          </div>
-          <div class="grid grid-cols-[150px_minmax(0,1fr)] gap-3">
-            <span class="text-content-muted">Policy</span>
-            <span class="break-words text-content-primary dark:text-white">
-              {{ formatValue(positionMeta.policy) }}
-            </span>
-          </div>
+        <h2 class="mb-4 text-lg font-semibold text-content-heading dark:text-white">Satellites In View</h2>
+        <div class="overflow-x-auto">
+          <table class="w-full min-w-[540px] text-left text-sm">
+            <thead class="border-b border-stroke-subtle text-xs uppercase text-content-muted">
+              <tr>
+                <th class="py-2 pr-4 font-semibold">PRN</th>
+                <th class="py-2 pr-4 font-semibold">Used</th>
+                <th class="py-2 pr-4 font-semibold">Elevation</th>
+                <th class="py-2 pr-4 font-semibold">Azimuth</th>
+                <th class="py-2 pr-4 font-semibold">SNR</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-stroke-subtle dark:divide-white/10">
+              <tr
+                v-for="row in stableSatellites"
+                :key="row.prn"
+                class="sat-row"
+                :class="{ 'sat-row-stale': row.stale }"
+              >
+                <td class="py-2 pr-4 font-medium" :class="row.used ? 'text-accent-green' : 'text-content-primary dark:text-white'">
+                  {{ row.prn }}
+                </td>
+                <td class="py-2 pr-4">
+                  <span :class="row.used ? 'inline-flex items-center gap-1.5 text-accent-green' : 'text-content-muted'">
+                    <span v-if="row.used" class="h-2 w-2 rounded-full bg-accent-green"></span>
+                    {{ row.used ? 'yes' : '–' }}
+                  </span>
+                </td>
+                <td class="py-2 pr-4">{{ formatValue(row.data.elevation_degrees, 'deg') }}</td>
+                <td class="py-2 pr-4">{{ formatValue(row.data.azimuth_degrees, 'deg') }}</td>
+                <td class="py-2 pr-4">{{ formatValue(row.data.snr_db, 'dB') }}</td>
+              </tr>
+              <tr v-if="stableSatellites.length === 0">
+                <td colspan="5" class="py-6 text-center text-content-muted">No satellites in view yet</td>
+              </tr>
+            </tbody>
+          </table>
         </div>
       </section>
     </div>
 
-    <div class="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
-      <section v-for="group in detailGroups" :key="group.title" class="glass-card p-5">
-        <h2 class="mb-4 text-lg font-semibold text-content-heading dark:text-white">
-          {{ group.title }}
-        </h2>
-        <div class="grid grid-cols-[minmax(110px,0.75fr)_minmax(0,1fr)] gap-x-4 gap-y-2 text-sm">
-          <template v-for="row in group.rows" :key="`${group.title}-${row[0]}`">
-            <div class="text-content-muted">{{ row[0] }}</div>
-            <div class="break-words font-medium text-content-primary dark:text-white">
-              {{ formatValue(row[1], row[2]) }}
-            </div>
-          </template>
-        </div>
-      </section>
-    </div>
+    <!-- ══════════════════════ DETAILS TAB ═══════════════════════════════════ -->
+    <div v-show="activeTab === 'details'">
 
-    <section class="glass-card p-5">
-      <h2 class="mb-4 text-lg font-semibold text-content-heading dark:text-white">
-        Satellites In View + SNR
-      </h2>
-      <div class="overflow-x-auto">
-        <table class="w-full min-w-[560px] text-left text-sm">
-          <thead class="border-b border-stroke-subtle text-xs uppercase text-content-muted">
-            <tr>
-              <th class="py-2 pr-4 font-semibold">PRN</th>
-              <th class="py-2 pr-4 font-semibold">Elevation</th>
-              <th class="py-2 pr-4 font-semibold">Azimuth</th>
-              <th class="py-2 pr-4 font-semibold">SNR</th>
-            </tr>
-          </thead>
-          <tbody class="divide-y divide-stroke-subtle dark:divide-white/10">
-            <tr v-for="satellite in visibleSatellites" :key="String(satellite.prn)">
-              <td class="py-2 pr-4 text-content-primary dark:text-white">
-                {{ formatValue(satellite.prn) }}
-              </td>
-              <td class="py-2 pr-4">{{ formatValue(satellite.elevation_degrees, 'deg') }}</td>
-              <td class="py-2 pr-4">{{ formatValue(satellite.azimuth_degrees, 'deg') }}</td>
-              <td class="py-2 pr-4">{{ formatValue(satellite.snr_db, 'dB') }}</td>
-            </tr>
-            <tr v-if="visibleSatellites.length === 0">
-              <td colspan="4" class="py-6 text-center text-content-muted">
-                No satellites in view yet
-              </td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-    </section>
-
-    <section class="glass-card p-5">
-      <h2 class="mb-4 text-lg font-semibold text-content-heading dark:text-white">
-        Recent NMEA Sentences
-      </h2>
-      <div class="overflow-x-auto">
-        <table class="w-full min-w-[760px] text-left text-sm">
-          <thead class="border-b border-stroke-subtle text-xs uppercase text-content-muted">
-            <tr>
-              <th class="py-2 pr-4 font-semibold">Timestamp</th>
-              <th class="py-2 pr-4 font-semibold">Type</th>
-              <th class="py-2 pr-4 font-semibold">Sentence</th>
-            </tr>
-          </thead>
-          <tbody class="divide-y divide-stroke-subtle dark:divide-white/10">
-            <tr
-              v-for="sentence in recentSentences"
-              :key="`${sentence.timestamp}-${sentence.sentence}`"
+      <!-- Accordion detail groups -->
+      <div class="space-y-2">
+        <div
+          v-for="group in detailGroups"
+          :key="group.title"
+          class="glass-card overflow-hidden"
+        >
+          <button
+            type="button"
+            class="accordion-header"
+            @click="toggleGroup(group.title)"
+          >
+            <span class="font-semibold text-content-heading dark:text-white">{{ group.title }}</span>
+            <svg
+              class="accordion-chevron"
+              :class="{ 'accordion-chevron-open': openGroups.has(group.title) }"
+              xmlns="http://www.w3.org/2000/svg"
+              width="16"
+              height="16"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
             >
-              <td class="py-2 pr-4 whitespace-nowrap">
-                {{ formatValue(sentence.timestamp) }}
-              </td>
-              <td class="py-2 pr-4">{{ formatValue(sentence.sentence_type) }}</td>
-              <td class="py-2 pr-4 font-mono text-xs">{{ formatValue(sentence.sentence) }}</td>
-            </tr>
-            <tr v-if="recentSentences.length === 0">
-              <td colspan="3" class="py-6 text-center text-content-muted">
-                No NMEA sentences captured yet
-              </td>
-            </tr>
-          </tbody>
-        </table>
+              <polyline points="6 9 12 15 18 9"></polyline>
+            </svg>
+          </button>
+          <div v-if="openGroups.has(group.title)" class="accordion-body">
+            <div class="grid grid-cols-[minmax(110px,0.75fr)_minmax(0,1fr)] gap-x-4 gap-y-2 text-sm">
+              <template v-for="row in group.rows" :key="`${group.title}-${row[0]}`">
+                <div class="text-content-muted">{{ row[0] }}</div>
+                <div class="break-words font-medium text-content-primary dark:text-white">{{ formatValue(row[1], row[2]) }}</div>
+              </template>
+            </div>
+          </div>
+        </div>
       </div>
-    </section>
 
-    <section class="glass-card p-5">
-      <div class="mb-4 flex items-center justify-between gap-3">
-        <h2 class="text-lg font-semibold text-content-heading dark:text-white">Raw Snapshot</h2>
+      <!-- NMEA sentences (collapsed by default) -->
+      <section class="glass-card overflow-hidden">
         <button
           type="button"
-          class="rounded-[10px] border border-stroke-subtle dark:border-white/10 bg-white/70 dark:bg-white/10 px-3 py-1.5 text-xs font-semibold text-content-primary dark:text-white hover:bg-white dark:hover:bg-white/20"
-          @click="showRawSnapshot = !showRawSnapshot"
+          class="accordion-header"
+          @click="toggleGroup('__nmea__')"
         >
-          {{ showRawSnapshot ? 'Hide' : 'Show' }}
+          <span class="font-semibold text-content-heading dark:text-white">Recent NMEA Sentences</span>
+          <svg
+            class="accordion-chevron"
+            :class="{ 'accordion-chevron-open': openGroups.has('__nmea__') }"
+            xmlns="http://www.w3.org/2000/svg"
+            width="16"
+            height="16"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          >
+            <polyline points="6 9 12 15 18 9"></polyline>
+          </svg>
         </button>
-      </div>
-      <pre
-        v-if="showRawSnapshot"
-        class="max-h-[440px] overflow-auto rounded-[10px] border border-stroke-subtle bg-background-soft p-4 text-xs text-content-primary dark:border-white/10 dark:bg-black/20 dark:text-white"
-        >{{ rawSnapshot }}</pre
-      >
-    </section>
+        <div v-if="openGroups.has('__nmea__')" class="accordion-body">
+          <div class="overflow-x-auto">
+            <table class="w-full min-w-[760px] text-left text-sm">
+              <thead class="border-b border-stroke-subtle text-xs uppercase text-content-muted">
+                <tr>
+                  <th class="py-2 pr-4 font-semibold">Timestamp</th>
+                  <th class="py-2 pr-4 font-semibold">Type</th>
+                  <th class="py-2 pr-4 font-semibold">Sentence</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-stroke-subtle dark:divide-white/10">
+                <tr v-for="sentence in recentSentences" :key="`${sentence.timestamp}-${sentence.sentence}`">
+                  <td class="py-2 pr-4 whitespace-nowrap">{{ formatValue(sentence.timestamp) }}</td>
+                  <td class="py-2 pr-4">{{ formatValue(sentence.sentence_type) }}</td>
+                  <td class="py-2 pr-4 font-mono text-xs">{{ formatValue(sentence.sentence) }}</td>
+                </tr>
+                <tr v-if="recentSentences.length === 0">
+                  <td colspan="3" class="py-6 text-center text-content-muted">No NMEA sentences captured yet</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- Raw snapshot (collapsed by default) -->
+      <section class="glass-card p-5">
+        <div class="flex items-center justify-between gap-3">
+          <h2 class="text-lg font-semibold text-content-heading dark:text-white">Raw Snapshot</h2>
+          <button
+            type="button"
+            class="rounded-[10px] border border-stroke-subtle dark:border-white/10 bg-white/70 dark:bg-white/10 px-3 py-1.5 text-xs font-semibold text-content-primary dark:text-white hover:bg-white dark:hover:bg-white/20"
+            @click="showRawSnapshot = !showRawSnapshot"
+          >
+            {{ showRawSnapshot ? 'Hide' : 'Show' }}
+          </button>
+        </div>
+        <pre
+          v-if="showRawSnapshot"
+          class="mt-4 max-h-[440px] overflow-auto rounded-[10px] border border-stroke-subtle bg-background-soft p-4 text-xs text-content-primary dark:border-white/10 dark:bg-black/20 dark:text-white"
+          >{{ rawSnapshot }}</pre
+        >
+      </section>
+    </div>
+
   </div>
 </template>
 
@@ -1206,5 +1575,110 @@ const rawSnapshot = computed(() => JSON.stringify(gps.value ?? {}, null, 2));
   color: var(--color-text-muted);
   font-size: 0.875rem;
   pointer-events: none;
+}
+
+.sat-row {
+  transition: opacity 0.6s ease, color 0.4s ease;
+  opacity: 1;
+}
+
+.sat-row-stale {
+  opacity: 0.35;
+}
+
+/* ── Page tabs ────────────────────────────────────────────────────────────── */
+.page-tabs {
+  display: flex;
+  gap: 2px;
+  border-bottom: 1px solid var(--color-border-subtle, rgba(0,0,0,0.1));
+  padding-bottom: 0;
+}
+
+.page-tab {
+  padding: 8px 18px;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--color-text-muted, #888);
+  border-bottom: 2px solid transparent;
+  transition: color 0.18s, border-color 0.18s;
+  margin-bottom: -1px;
+  background: none;
+  border-top: none;
+  border-left: none;
+  border-right: none;
+  cursor: pointer;
+}
+
+.page-tab:hover {
+  color: var(--color-text-primary, #fff);
+}
+
+.page-tab-active {
+  color: var(--color-primary, #aae8e8);
+  border-bottom-color: var(--color-primary, #aae8e8);
+}
+
+/* ── Inner (Globe / Table) tabs ───────────────────────────────────────────── */
+.inner-tabs {
+  display: flex;
+  gap: 2px;
+  border: 1px solid var(--color-border-subtle, rgba(255,255,255,0.1));
+  border-radius: 8px;
+  padding: 2px;
+  background: rgba(255,255,255,0.04);
+}
+
+.inner-tab {
+  padding: 4px 12px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--color-text-muted, #888);
+  border-radius: 6px;
+  border: none;
+  background: none;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.inner-tab:hover {
+  color: var(--color-text-primary, #fff);
+}
+
+.inner-tab-active {
+  background: var(--color-primary, #aae8e8);
+  color: #000;
+}
+
+/* ── Accordion ────────────────────────────────────────────────────────────── */
+.accordion-header {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 20px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+  font-size: 0.9rem;
+  transition: background 0.15s;
+}
+
+.accordion-header:hover {
+  background: rgba(255,255,255,0.04);
+}
+
+.accordion-chevron {
+  flex-shrink: 0;
+  color: var(--color-text-muted, #888);
+  transition: transform 0.2s ease;
+}
+
+.accordion-chevron-open {
+  transform: rotate(180deg);
+}
+
+.accordion-body {
+  padding: 0 20px 16px;
 }
 </style>

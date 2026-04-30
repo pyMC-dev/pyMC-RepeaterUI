@@ -42,6 +42,27 @@
     ]
   },
   {
+    "name": "Waev",
+    "website": "https://waev.app",
+    "brokers": [
+      {
+        "enabled": true,
+        "name": "Waev",
+        "host": "mqtt-a.waev.app",
+        "port": 443,
+        "audience": "mqtt.waev.app",
+        "use_jwt_auth": true,
+        "format": "letsmesh",
+        "transport": "websockets",
+        "retain_status": false,
+        "tls": {
+          "enabled": true,
+          "insecure": false
+        }
+      }
+    ]
+  },
+  {
     "name": "MeshMapper",
     "website": "https://meshmapper.net",
     "brokers": [

@@ -6,6 +6,7 @@ import { useWebSocketStore } from '@/stores/websocket';
 import ApiService from '@/utils/api';
 import { useManagedPolling } from '@/composables/useManagedPolling';
 import GitHubIcon from '../icons/github.vue';
+import DiscordIcon from '../icons/discord.vue';
 import CoffeeIcon from '../icons/coffee.vue';
 import RFNoiseFloor from '../charts/RFNoiseFloor.vue';
 import AdvertModal from '../modals/AdvertModal.vue';
@@ -19,6 +20,7 @@ import TerminalIcon from '../icons/terminal.vue';
 import StatsIcon from '../icons/stats.vue';
 import SystemIcon from '../icons/system.vue';
 import NeighborsIcon from '../icons/neighbors.vue';
+import GpsIcon from '../icons/gps.vue';
 
 import DutycycleIcon from '../icons/dutycycle.vue';
 
@@ -107,6 +109,7 @@ const iconComponents = {
   dashboard: DashboardIcon,
   neighbors: NeighborsIcon,
   statistics: StatsIcon,
+  gps: GpsIcon,
   'system-stats': SystemIcon,
   sessions: SystemIcon, // Reuse SystemIcon for sessions
   configuration: ConfigurationsIcon,
@@ -119,10 +122,11 @@ const iconComponents = {
 
 type IconKey = keyof typeof iconComponents;
 
-const sidebarItems: Array<{ name: string; icon: IconKey; route: string }> = [
+const baseSidebarItems: Array<{ name: string; icon: IconKey; route: string }> = [
   { name: 'Dashboard', icon: 'dashboard', route: '/' },
   { name: 'Neighbors', icon: 'neighbors', route: '/neighbors' },
   { name: 'Statistics', icon: 'statistics', route: '/statistics' },
+  { name: 'GPS', icon: 'gps', route: '/gps' },
   { name: 'System Stats', icon: 'system-stats', route: '/system-stats' },
   { name: 'Sessions', icon: 'sessions', route: '/sessions' },
   { name: 'Configuration', icon: 'configuration', route: '/configuration' },
@@ -132,6 +136,15 @@ const sidebarItems: Array<{ name: string; icon: IconKey; route: string }> = [
   { name: 'Logs', icon: 'logs', route: '/logs' },
   { name: 'Help', icon: 'help', route: '/help' },
 ];
+
+const isGpsEnabled = computed(() => {
+  const stats = systemStore.stats as { gps?: { enabled?: boolean }; config?: { gps?: { enabled?: boolean } } } | null;
+  return stats?.gps?.enabled === true || stats?.config?.gps?.enabled === true;
+});
+
+const sidebarItems = computed(() =>
+  baseSidebarItems.filter((item) => item.route !== '/gps' || isGpsEnabled.value),
+);
 
 const modeOptions = [
   {
@@ -347,7 +360,7 @@ const coreVersion = computed(() => parseVersion(systemStore.coreVersion));
         <p class="text-content-muted dark:text-content-muted text-xs uppercase mb-4">Monitoring</p>
         <div class="space-y-2">
           <button
-            v-for="item in sidebarItems.slice(0, 3)"
+            v-for="item in sidebarItems.slice(0, 4)"
             :key="item.name"
             @click="navigateToRoute(item.route)"
             :class="
@@ -374,7 +387,7 @@ const coreVersion = computed(() => parseVersion(systemStore.coreVersion));
         <p class="text-content-muted dark:text-content-muted text-xs uppercase mb-4">System</p>
         <div class="space-y-2">
           <button
-            v-for="item in sidebarItems.slice(3, 7)"
+            v-for="item in sidebarItems.slice(4, 8)"
             :key="item.name"
             @click="navigateToRoute(item.route)"
             :class="
@@ -403,7 +416,7 @@ const coreVersion = computed(() => parseVersion(systemStore.coreVersion));
         </p>
         <div class="space-y-2">
           <button
-            v-for="item in sidebarItems.slice(7, 9)"
+            v-for="item in sidebarItems.slice(8, 10)"
             :key="item.name"
             @click="navigateToRoute(item.route)"
             :class="
@@ -430,7 +443,7 @@ const coreVersion = computed(() => parseVersion(systemStore.coreVersion));
         <p class="text-content-muted dark:text-content-muted text-xs uppercase mb-4">Other</p>
         <div class="space-y-2">
           <button
-            v-for="item in sidebarItems.slice(9)"
+            v-for="item in sidebarItems.slice(10)"
             :key="item.name"
             @click="navigateToRoute(item.route)"
             :class="
@@ -685,17 +698,29 @@ const coreVersion = computed(() => parseVersion(systemStore.coreVersion));
         >
           Powered by
         </p>
-        <img
-          src="@/assets/meshcore.svg"
-          alt="MeshCore"
-          class="h-4 opacity-70 dark:invert-0 invert"
-        />
+        <a href="https://meshcore.io" target="_blank" rel="noopener noreferrer" title="MeshCore">
+          <img
+            src="@/assets/meshcore.svg"
+            alt="MeshCore"
+            class="h-4 opacity-70 dark:invert-0 invert"
+          />
+        </a>
       </div>
 
       <div class="flex items-center justify-center gap-3">
         <a
+          href="https://discord.gg/SMHkUDwf"
+          target="_blank"
+          rel="noopener noreferrer"
+          class="inline-flex items-center justify-center w-9 h-9 rounded-xl bg-content-primary dark:bg-white/10 border border-stroke-subtle dark:border-stroke/20 hover:bg-indigo-50 dark:hover:bg-indigo-500/20 hover:border-indigo-500/50 transition-all duration-300 hover:scale-110 group backdrop-blur-sm"
+          title="Discord"
+        >
+          <DiscordIcon class="w-5 h-5 text-white group-hover:text-indigo-500 transition-colors" />
+        </a>
+        <a
           href="https://github.com/rightup"
           target="_blank"
+          rel="noopener noreferrer"
           class="inline-flex items-center justify-center w-9 h-9 rounded-xl bg-content-primary dark:bg-white/10 border border-stroke-subtle dark:border-stroke/20 hover:bg-primary/20 dark:hover:bg-primary/30 hover:border-primary/50 transition-all duration-300 hover:scale-110 group backdrop-blur-sm"
           title="GitHub"
         >
@@ -704,6 +729,7 @@ const coreVersion = computed(() => parseVersion(systemStore.coreVersion));
         <a
           href="https://buymeacoffee.com/rightup"
           target="_blank"
+          rel="noopener noreferrer"
           class="inline-flex items-center justify-center w-9 h-9 rounded-xl bg-content-primary dark:bg-white/10 border border-stroke-subtle dark:border-stroke/20 hover:bg-yellow-50 dark:hover:bg-yellow-500/20 hover:border-yellow-500/50 transition-all duration-300 hover:scale-110 group backdrop-blur-sm"
           title="Buy Me a Coffee"
         >

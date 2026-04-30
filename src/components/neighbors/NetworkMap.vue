@@ -25,6 +25,7 @@ interface Advert {
   snr: number | null;
   advert_count: number;
   is_new_neighbor: boolean;
+  zero_hop?: boolean;
   // Optional jittered coordinates for identical coordinate handling
   jittered_latitude?: number;
   jittered_longitude?: number;
@@ -359,6 +360,11 @@ const initializeOpenStreetMap = async () => {
       animationDelay = 0,
     ) => {
       if (!map) {
+        return;
+      }
+
+      // Only zero-hop contacts should have a connection line to base station.
+      if (advert.zero_hop !== true) {
         return;
       }
 

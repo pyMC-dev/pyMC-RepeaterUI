@@ -368,12 +368,12 @@ const applyGeneratedKey = async () => {
         </div>
       </div>
 
-      <!-- Latitude -->
+      <!-- Manual Latitude -->
       <div
         class="flex flex-col sm:flex-row sm:justify-between sm:items-center py-2 border-b border-stroke-subtle dark:border-stroke/10 gap-1"
       >
         <span class="text-content-secondary dark:text-content-muted text-xs sm:text-sm"
-          >Latitude</span
+          >Manual Latitude</span
         >
         <div
           v-if="!isEditing"
@@ -392,12 +392,12 @@ const applyGeneratedKey = async () => {
         />
       </div>
 
-      <!-- Longitude -->
+      <!-- Manual Longitude -->
       <div
         class="flex flex-col sm:flex-row sm:justify-between sm:items-center py-2 border-b border-stroke-subtle dark:border-stroke/10 gap-1"
       >
         <span class="text-content-secondary dark:text-content-muted text-xs sm:text-sm"
-          >Longitude</span
+          >Manual Longitude</span
         >
         <div
           v-if="!isEditing"

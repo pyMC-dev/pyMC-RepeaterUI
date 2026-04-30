@@ -8,6 +8,7 @@ import {
   getClientId,
 } from './auth';
 import { useAppRuntimeStore } from '@/stores/appRuntime';
+import type { GPSDiagnostics } from '@/types/api';
 
 // API Response interface for consistent response structure
 export interface ApiResponse<T = unknown> {
@@ -291,6 +292,10 @@ export class ApiService {
         },
       },
     );
+  }
+
+  static async getGpsDiagnostics(): Promise<ApiResponse<GPSDiagnostics>> {
+    return this.get('gps');
   }
 
   static async createTransportKey(

@@ -6,6 +6,7 @@ import { useWebSocketStore } from '@/stores/websocket';
 import ApiService from '@/utils/api';
 import { useManagedPolling } from '@/composables/useManagedPolling';
 import GitHubIcon from '../icons/github.vue';
+import DiscordIcon from '../icons/discord.vue';
 import CoffeeIcon from '../icons/coffee.vue';
 import RFNoiseFloor from '../charts/RFNoiseFloor.vue';
 import AdvertModal from '../modals/AdvertModal.vue';
@@ -697,17 +698,29 @@ const coreVersion = computed(() => parseVersion(systemStore.coreVersion));
         >
           Powered by
         </p>
-        <img
-          src="@/assets/meshcore.svg"
-          alt="MeshCore"
-          class="h-4 opacity-70 dark:invert-0 invert"
-        />
+        <a href="https://meshcore.io" target="_blank" rel="noopener noreferrer" title="MeshCore">
+          <img
+            src="@/assets/meshcore.svg"
+            alt="MeshCore"
+            class="h-4 opacity-70 dark:invert-0 invert"
+          />
+        </a>
       </div>
 
       <div class="flex items-center justify-center gap-3">
         <a
+          href="https://discord.gg/SMHkUDwf"
+          target="_blank"
+          rel="noopener noreferrer"
+          class="inline-flex items-center justify-center w-9 h-9 rounded-xl bg-content-primary dark:bg-white/10 border border-stroke-subtle dark:border-stroke/20 hover:bg-indigo-50 dark:hover:bg-indigo-500/20 hover:border-indigo-500/50 transition-all duration-300 hover:scale-110 group backdrop-blur-sm"
+          title="Discord"
+        >
+          <DiscordIcon class="w-5 h-5 text-white group-hover:text-indigo-500 transition-colors" />
+        </a>
+        <a
           href="https://github.com/rightup"
           target="_blank"
+          rel="noopener noreferrer"
           class="inline-flex items-center justify-center w-9 h-9 rounded-xl bg-content-primary dark:bg-white/10 border border-stroke-subtle dark:border-stroke/20 hover:bg-primary/20 dark:hover:bg-primary/30 hover:border-primary/50 transition-all duration-300 hover:scale-110 group backdrop-blur-sm"
           title="GitHub"
         >
@@ -716,6 +729,7 @@ const coreVersion = computed(() => parseVersion(systemStore.coreVersion));
         <a
           href="https://buymeacoffee.com/rightup"
           target="_blank"
+          rel="noopener noreferrer"
           class="inline-flex items-center justify-center w-9 h-9 rounded-xl bg-content-primary dark:bg-white/10 border border-stroke-subtle dark:border-stroke/20 hover:bg-yellow-50 dark:hover:bg-yellow-500/20 hover:border-yellow-500/50 transition-all duration-300 hover:scale-110 group backdrop-blur-sm"
           title="Buy Me a Coffee"
         >

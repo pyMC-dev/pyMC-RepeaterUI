@@ -63,6 +63,7 @@ const showMapLegend = ref(
     typeof window !== 'undefined' ? window.innerWidth >= 1024 : true,
   ),
 );
+const showAllMapContacts = ref(getPreference('neighbors_showAllMapContacts', false));
 
 // Global filter state
 const showFilters = ref(getPreference('neighbors_showFilters', false));
@@ -77,6 +78,7 @@ const filters = ref(
 // Watch for changes and persist to localStorage
 watch(isCompactView, (value) => setPreference('neighbors_compactView', value));
 watch(showMapLegend, (value) => setPreference('neighbors_showMapLegend', value));
+watch(showAllMapContacts, (value) => setPreference('neighbors_showAllMapContacts', value));
 watch(showFilters, (value) => setPreference('neighbors_showFilters', value));
 watch(filters, (value) => setPreference('neighbors_filters', value), { deep: true });
 
@@ -214,8 +216,8 @@ const allAdvertsWithLocation = computed(() => {
         !isNaN(lat) &&
         !isNaN(lng);
 
-      // Only include zero-hop nodes for link visualization
-      return hasValidLocation && advert.zero_hop === true;
+      // Default to zero-hop nodes, with optional toggle for all contacts
+      return hasValidLocation && (showAllMapContacts.value || advert.zero_hop === true);
     });
 });
 
@@ -497,6 +499,18 @@ onMounted(async () => {
 
             <!-- Filter Controls -->
             <div class="flex items-center gap-2">
+              <button
+                @click="showAllMapContacts = !showAllMapContacts"
+                :class="[
+                  'px-3 py-1.5 text-xs rounded-lg transition-colors border',
+                  showAllMapContacts
+                    ? 'bg-primary/20 text-primary border-primary/30'
+                    : 'bg-background-mute dark:bg-white/10 text-content-secondary dark:text-content-primary border-stroke-subtle dark:border-stroke/20 hover:bg-stroke-subtle dark:hover:bg-white/20',
+                ]"
+              >
+                Map: {{ showAllMapContacts ? 'All Contacts' : 'Zero Hop' }}
+              </button>
+
               <button
                 @click="showFilters = !showFilters"
                 :class="[

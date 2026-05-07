@@ -1,11 +1,14 @@
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue';
+import { useRouter } from 'vue-router';
 import { useSystemStore } from '@/stores/system';
 import apiClient from '@/utils/api';
 
+const router = useRouter();
 const systemStore = useSystemStore();
 
 const radioConfig = computed(() => systemStore.stats?.config?.radio || {});
+const cadConfig = computed(() => (systemStore.stats?.config?.radio as any)?.cad ?? {});
 
 // Editable form values
 const isEditing = ref(false);
@@ -90,7 +93,6 @@ const startEditing = () => {
 const cancelEditing = () => {
   isEditing.value = false;
   error.value = null;
-  // Reload values from store
   const config = radioConfig.value;
   frequencyMHz.value = config.frequency ? Number((config.frequency / 1000000).toFixed(3)) : 0;
   spreadingFactor.value = config.spreading_factor ?? 0;
@@ -106,7 +108,6 @@ const saveChanges = async () => {
   successMessage.value = null;
 
   try {
-    // Convert to backend units (Hz for frequency and bandwidth)
     const payload: Record<string, number> = {};
 
     if (frequencyMHz.value) payload.frequency = frequencyMHz.value * 1000000;
@@ -118,19 +119,11 @@ const saveChanges = async () => {
     const response = await apiClient.post('/update_radio_config', payload);
     const data = response.data as any;
 
-    // API returns data directly without success wrapper
-    // Success if we have a message or persisted flag
     if (data.message || data.persisted) {
       successMessage.value = data.message || 'Settings saved successfully';
       isEditing.value = false;
-
-      // Refresh stats to show updated values
       await systemStore.fetchStats();
-
-      // Clear success message after 3 seconds
-      setTimeout(() => {
-        successMessage.value = null;
-      }, 3000);
+      setTimeout(() => { successMessage.value = null; }, 3000);
     } else if (data.error) {
       error.value = data.error;
     } else {
@@ -343,6 +336,39 @@ const saveChanges = async () => {
         <strong>Note:</strong> Radio hardware changes (frequency, bandwidth, spreading factor,
         coding rate) may require a service restart to apply.
       </p>
+    </div>
+
+    <!-- CAD Calibration Section -->
+    <div class="cfg-section space-y-3">
+      <!-- Section header -->
+      <div class="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
+        <div>
+          <h3 class="text-base sm:text-lg font-semibold text-content-primary dark:text-content-primary mb-1 sm:mb-2">CAD Calibration</h3>
+          <p class="text-content-secondary dark:text-content-muted text-xs sm:text-sm">Channel Activity Detection: Run Calibration to update</p>
+          <p class="text-content-secondary dark:text-content-muted text-xs sm:text-sm mt-1">These settings tune the receivers ability to detect channel status prior to transmission</p>
+        </div>
+        <button @click="router.push('/cad-calibration')" class="cfg-btn-secondary flex-shrink-0">
+          Run Calibration
+        </button>
+      </div>
+
+      <div class="pt-2" />
+
+      <!-- Peak Threshold -->
+      <div class="flex flex-col sm:flex-row sm:justify-between sm:items-center py-2 border-b border-stroke-subtle dark:border-stroke/10 gap-1">
+        <span class="text-content-secondary dark:text-content-muted text-xs sm:text-sm">Peak Threshold</span>
+        <span class="text-content-primary dark:text-content-primary font-mono text-sm">
+          {{ cadConfig.peak_threshold ?? 'Not calibrated' }}
+        </span>
+      </div>
+
+      <!-- Min Threshold -->
+      <div class="flex flex-col sm:flex-row sm:justify-between sm:items-center py-2 gap-1">
+        <span class="text-content-secondary dark:text-content-muted text-xs sm:text-sm">Min Threshold</span>
+        <span class="text-content-primary dark:text-content-primary font-mono text-sm">
+          {{ cadConfig.min_threshold ?? 'Not calibrated' }}
+        </span>
+      </div>
     </div>
   </div>
 </template>

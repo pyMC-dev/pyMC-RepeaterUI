@@ -23,6 +23,23 @@ All fixed, absolute, and modal elements use a standardised z-index scale with **
 3. **Page-chrome dropdowns** (`z-[100]`) are exempt from Teleport — they are `position: absolute` within their parent and only need to clear adjacent page content, not fixed overlays.
 4. **Do not use ad-hoc values** (e.g. `z-[9999]`, `z-[99999]`). If a new tier is genuinely needed, add it here first and document why.
 
+## CSS utilities
+
+The `modal-backdrop`, `modal-backdrop-heavy`, and `modal-card` utility classes in `src/assets/main.css` bake in the correct z-index automatically:
+
+```html
+<!-- primary modal -->
+<div class="modal-backdrop" @click.self="close">
+  <div class="modal-card max-w-lg">…</div>
+</div>
+```
+
+Field labels inside modal forms use `modal-field-label` (also defined in `main.css`). Do not write raw Tailwind label classes in modal templates — use this class so padding and type scale stay consistent across all modals:
+
+```html
+<label class="modal-field-label">Name *</label>
+```
+
 ## Background
 
 Before this scale was introduced every modal used `z-[99999]` (or nearby magic numbers), which made it impossible to layer modals on top of each other reliably and led to bugs such as the Sessions dialog appearing behind the Room Messages modal. The scale was consolidated in May 2026.

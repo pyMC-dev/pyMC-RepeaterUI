@@ -61,18 +61,23 @@
 
   /* ── Modal utilities ────────────────────────────────────────────────────── */
 
-  /* Standard modal backdrop (confirmations, edit dialogs) */
+  /* Standard modal backdrop (confirmations, edit dialogs) — z-[300] per layering scale */
   .modal-backdrop {
-    @apply fixed inset-0 bg-black/50 backdrop-blur-lg z-[99999] flex items-center justify-center p-4;
+    @apply fixed inset-0 bg-black/50 backdrop-blur-lg z-[300] flex items-center justify-center p-4;
   }
 
   /* Heavy backdrop for irreversible / destructive operations */
   .modal-backdrop-heavy {
-    @apply fixed inset-0 bg-black/80 backdrop-blur-lg z-[99999] flex items-center justify-center p-4;
+    @apply fixed inset-0 bg-black/80 backdrop-blur-lg z-[300] flex items-center justify-center p-4;
   }
 
   /* Inner card — combine with max-w-md or max-w-lg in the template */
   .modal-card {
     @apply bg-white dark:bg-surface-elevated backdrop-blur-xl rounded-[20px] p-6 w-full border border-stroke-subtle dark:border-white/10;
+  }
+
+  /* Field label inside any modal form — use instead of raw Tailwind classes */
+  .modal-field-label {
+    @apply block text-xs font-medium text-content-secondary dark:text-content-muted mb-2;
   }
 }

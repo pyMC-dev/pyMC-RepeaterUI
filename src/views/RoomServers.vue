@@ -877,9 +877,7 @@ async function removeClient(publicKey: string, identityHash?: string) {
 
         <div class="space-y-4">
           <div>
-            <label class="block text-content-secondary dark:text-content-primary/70 text-sm mb-2"
-              >Name *</label
-            >
+            <label class="modal-field-label">Name *</label>
             <input
               v-model="newIdentity.name"
               type="text"
@@ -889,16 +887,16 @@ async function removeClient(publicKey: string, identityHash?: string) {
           </div>
 
           <div>
-            <label class="block text-content-secondary dark:text-content-primary/70 text-sm mb-2">
-              Identity Key (Optional)
+            <div class="flex items-center gap-3 mb-2">
+              <label class="modal-field-label !mb-0">Identity Key (Optional)</label>
               <button
                 @click="showKeyInCreate = !showKeyInCreate"
                 type="button"
-                class="ml-2 text-primary/70 hover:text-primary text-xs underline"
+                class="text-primary/70 hover:text-primary text-xs underline"
               >
                 {{ showKeyInCreate ? 'Hide' : 'Show/Edit' }}
               </button>
-            </label>
+            </div>
             <div v-if="showKeyInCreate">
               <input
                 v-model="newIdentity.identity_key"
@@ -916,9 +914,7 @@ async function removeClient(publicKey: string, identityHash?: string) {
           </div>
 
           <div>
-            <label class="block text-content-secondary dark:text-content-primary/70 text-sm mb-2"
-              >Node Name</label
-            >
+            <label class="modal-field-label">Node Name</label>
             <input
               v-model="newIdentity.settings.node_name"
               type="text"
@@ -928,24 +924,22 @@ async function removeClient(publicKey: string, identityHash?: string) {
           </div>
 
           <div>
-            <div class="flex items-center justify-between mb-2">
-              <label class="text-content-secondary dark:text-content-primary/70 text-sm">Location</label>
-              <button
-                type="button"
-                @click="showLocationPickerCreate = true"
-                class="flex items-center gap-1.5 px-2.5 py-1 text-xs bg-background-mute dark:bg-white/5 hover:bg-stroke-subtle dark:hover:bg-white/10 text-content-secondary dark:text-content-primary rounded-lg border border-stroke-subtle dark:border-stroke/20 transition-colors"
-                title="Pick location on map"
-              >
-                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
-                </svg>
-                Pick on Map
-              </button>
-            </div>
+            <label class="modal-field-label">Location</label>
+            <button
+              type="button"
+              @click="showLocationPickerCreate = true"
+              class="flex items-center gap-1.5 px-2.5 py-1 mb-3 text-xs bg-background-mute dark:bg-white/5 hover:bg-stroke-subtle dark:hover:bg-white/10 text-content-secondary dark:text-content-primary rounded-lg border border-stroke-subtle dark:border-stroke/20 transition-colors"
+              title="Pick location on map"
+            >
+              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+              </svg>
+              Pick on Map
+            </button>
             <div class="grid grid-cols-2 gap-4">
               <div>
-                <label class="block text-content-secondary dark:text-content-primary/70 text-xs mb-1">Latitude</label>
+                <label class="modal-field-label">Latitude</label>
                 <input
                   v-model.number="newIdentity.settings.latitude"
                   type="number"
@@ -954,7 +948,7 @@ async function removeClient(publicKey: string, identityHash?: string) {
                 />
               </div>
               <div>
-                <label class="block text-content-secondary dark:text-content-primary/70 text-xs mb-1">Longitude</label>
+                <label class="modal-field-label">Longitude</label>
                 <input
                   v-model.number="newIdentity.settings.longitude"
                   type="number"
@@ -967,9 +961,7 @@ async function removeClient(publicKey: string, identityHash?: string) {
 
           <div class="grid grid-cols-2 gap-4">
             <div>
-              <label class="block text-content-secondary dark:text-content-primary/70 text-sm mb-2"
-                >Admin Password (Optional)</label
-              >
+              <label class="modal-field-label">Admin Password (Optional)</label>
               <input
                 v-model="newIdentity.settings.admin_password"
                 type="password"
@@ -981,9 +973,7 @@ async function removeClient(publicKey: string, identityHash?: string) {
               </p>
             </div>
             <div>
-              <label class="block text-content-secondary dark:text-content-primary/70 text-sm mb-2"
-                >Guest Password (Optional)</label
-              >
+              <label class="modal-field-label">Guest Password (Optional)</label>
               <input
                 v-model="newIdentity.settings.guest_password"
                 type="password"

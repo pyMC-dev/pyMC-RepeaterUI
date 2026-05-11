@@ -1,10 +1,12 @@
 import { onBeforeUnmount, onMounted, watch } from 'vue';
 import { useAppRuntimeStore } from '@/stores/appRuntime';
 import { useWebSocketStore } from '@/stores/websocket';
+import { useDataService } from '@/stores/dataService';
 
 export function useConnectionLifecycle() {
   const appRuntime = useAppRuntimeStore();
   const websocketStore = useWebSocketStore();
+  const dataService = useDataService();
 
   const handleVisibilityChange = () => {
     const isVisible = document.visibilityState === 'visible';
@@ -35,6 +37,7 @@ export function useConnectionLifecycle() {
       if (canMaintainConnections) {
         websocketStore.allowReconnect();
         websocketStore.connect();
+        void dataService.bootstrap();
       } else if (!appRuntime.isOnline) {
         websocketStore.pause('offline');
       } else if (!appRuntime.isDocumentVisible) {

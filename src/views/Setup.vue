@@ -2,6 +2,7 @@
 import { onMounted, computed, ref, onBeforeUnmount } from 'vue';
 import { useSetupStore } from '@/stores/setup';
 import ThemeToggle from '@/components/ThemeToggle.vue';
+import Spinner from '@/components/ui/Spinner.vue';
 
 const setupStore = useSetupStore();
 
@@ -709,21 +710,7 @@ const stepTitles = [
         <div
           class="bg-white dark:bg-surface-elevated backdrop-blur-xl max-w-sm w-full p-10 rounded-[24px] border border-stroke-subtle dark:border-white/20 shadow-[0_8px_48px_0_rgba(0,0,0,0.5)] flex flex-col items-center gap-6"
         >
-          <!-- Circular bar spinner -->
-          <svg class="spinner-svg" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
-            <rect
-              v-for="i in 8"
-              :key="i"
-              x="47.5"
-              y="14"
-              width="5"
-              height="18"
-              rx="2.5"
-              class="spinner-bar"
-              :transform="`rotate(${(i - 1) * 45}, 50, 50)`"
-              :style="`animation-delay: ${((i - 1) * 125)}ms`"
-            />
-          </svg>
+          <Spinner size="lg" />
 
           <div class="text-center">
             <h3 class="text-xl font-bold text-content-primary dark:text-content-primary mb-2">
@@ -835,27 +822,5 @@ const stepTitles = [
   will-change: transform, opacity;
 }
 
-/* Circular bar spinner */
-.spinner-svg {
-  width: 72px;
-  height: 72px;
-}
-
-.spinner-bar {
-  fill: transparent;
-  stroke: rgb(34 197 94);
-  stroke-width: 0.5;
-  animation: bar-fill 1s ease-in-out infinite;
-}
-
-@keyframes bar-fill {
-  0%, 100% {
-    fill: transparent;
-    opacity: 0.2;
-  }
-  40%, 60% {
-    fill: rgb(34 197 94);
-    opacity: 1;
-  }
 }
 </style>

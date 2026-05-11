@@ -15,6 +15,7 @@ const repeaterLat = computed(() => systemStore.stats?.config?.repeater?.latitude
 const repeaterLng = computed(() => systemStore.stats?.config?.repeater?.longitude ?? 0);
 
 const showLocationPickerCreate = ref(false);
+const showLocationPickerEdit = ref(false);
 
 const loading = ref(false);
 const error = ref<string | null>(null);
@@ -176,13 +177,11 @@ function openEditModal(identity: unknown) {
   if (!editingIdentity.value.settings) {
     editingIdentity.value.settings = {};
   }
-  // Ensure password fields exist
-  if (!editingIdentity.value.settings.admin_password) {
-    editingIdentity.value.settings.admin_password = '';
-  }
-  if (!editingIdentity.value.settings.guest_password) {
-    editingIdentity.value.settings.guest_password = '';
-  }
+  if (!editingIdentity.value.new_name) editingIdentity.value.new_name = '';
+  if (!editingIdentity.value.settings.admin_password) editingIdentity.value.settings.admin_password = '';
+  if (!editingIdentity.value.settings.guest_password) editingIdentity.value.settings.guest_password = '';
+  if (editingIdentity.value.settings.latitude == null) editingIdentity.value.settings.latitude = 0;
+  if (editingIdentity.value.settings.longitude == null) editingIdentity.value.settings.longitude = 0;
   showKeyInEdit.value = false;
   showEditModal.value = true;
 }
@@ -211,6 +210,13 @@ function openCreateModal() {
 function handleLocationPickerSelect(location: { latitude: number; longitude: number }) {
   newIdentity.value.settings.latitude = location.latitude;
   newIdentity.value.settings.longitude = location.longitude;
+}
+
+function handleLocationPickerSelectEdit(location: { latitude: number; longitude: number }) {
+  if (editingIdentity.value) {
+    editingIdentity.value.settings.latitude = location.latitude;
+    editingIdentity.value.settings.longitude = location.longitude;
+  }
 }
 
 function closeModals() {
@@ -897,7 +903,7 @@ async function removeClient(publicKey: string, identityHash?: string) {
         </div>
 
         <!-- Form -->
-        <form @submit.prevent="createIdentity" class="space-y-6">
+        <form @submit.prevent="createIdentity" class="modal-form">
 
           <!-- Name -->
           <div>
@@ -912,7 +918,7 @@ async function removeClient(publicKey: string, identityHash?: string) {
 
           <!-- Identity Key -->
           <div>
-            <div class="flex items-baseline gap-3 mt-4 mb-1">
+            <div class="modal-field-label-row">
               <span class="text-xs font-medium text-content-secondary dark:text-content-muted">Identity Key (Optional)</span>
               <button
                 @click="showKeyInCreate = !showKeyInCreate"
@@ -1033,60 +1039,82 @@ async function removeClient(publicKey: string, identityHash?: string) {
 
     <!-- Edit Modal -->
     <Teleport to="body">
+    <Transition
+      enter-active-class="transition-opacity duration-200"
+      enter-from-class="opacity-0"
+      leave-active-class="transition-opacity duration-200"
+      leave-to-class="opacity-0"
+    >
     <div
       v-if="showEditModal && editingIdentity"
-      class="fixed inset-0 bg-black/50 backdrop-blur-lg flex items-center justify-center z-[300] p-4"
-      @click.self="showEditModal = false"
+      class="modal-backdrop"
+      @click.self="closeModals"
     >
-      <div
-        class="bg-white dark:bg-surface-elevated backdrop-blur-xl border border-stroke-subtle dark:border-white/10 rounded-[15px] p-6 max-w-2xl w-full max-h-[90vh] overflow-y-auto"
-      >
-        <h2 class="text-xl font-bold text-content-primary dark:text-content-primary mb-4">
-          Edit Room Server
-        </h2>
+      <div class="modal-card max-w-2xl w-full max-h-[90vh] overflow-y-auto">
 
-        <div class="space-y-4">
+        <!-- Header -->
+        <div class="flex items-center justify-between mb-7">
           <div>
-            <label class="block text-content-secondary dark:text-content-primary/70 text-sm mb-2"
-              >Current Name</label
-            >
+            <h3 class="text-xl font-semibold text-content-primary dark:text-content-primary">
+              Edit Room Server
+            </h3>
+            <p class="text-content-secondary dark:text-content-muted text-sm mt-1">
+              Update room server identity
+            </p>
+          </div>
+          <button
+            @click="closeModals"
+            class="text-content-secondary dark:text-white/60 hover:text-content-primary dark:hover:text-white transition-colors"
+          >
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+
+        <!-- Form -->
+        <form @submit.prevent="updateIdentity" class="modal-form">
+
+          <!-- Current Name (read-only) -->
+          <div>
+            <label class="modal-field-label">Current Name</label>
             <input
               :value="editingIdentity.name"
               disabled
               type="text"
-              class="w-full bg-background-mute dark:bg-white/5 border border-stroke-subtle dark:border-stroke/10 rounded-lg px-4 py-2 text-content-muted dark:text-content-muted cursor-not-allowed"
+              class="modal-input cursor-not-allowed opacity-60"
             />
           </div>
 
+          <!-- New Name -->
           <div>
-            <label class="block text-content-secondary dark:text-content-primary/70 text-sm mb-2"
-              >New Name (optional)</label
-            >
+            <label class="modal-field-label">New Name (optional)</label>
             <input
               v-model="editingIdentity.new_name"
               type="text"
               placeholder="Leave empty to keep current name"
-              class="w-full bg-white dark:bg-white/5 border border-stroke-subtle dark:border-stroke/10 rounded-lg px-4 py-2 text-content-primary dark:text-content-primary placeholder-gray-500 dark:placeholder-white/40 focus:outline-none focus:border-primary/50 transition-colors"
+              class="modal-input"
             />
           </div>
 
+          <!-- Identity Key -->
           <div>
-            <label class="block text-content-secondary dark:text-content-primary/70 text-sm mb-2">
-              Identity Key (Optional)
+            <div class="modal-field-label-row">
+              <span class="text-xs font-medium text-content-secondary dark:text-content-muted">Identity Key (Optional)</span>
               <button
                 @click="showKeyInEdit = !showKeyInEdit"
                 type="button"
-                class="ml-2 text-primary/70 hover:text-primary text-xs underline"
+                class="text-primary/70 hover:text-primary text-xs underline"
               >
                 {{ showKeyInEdit ? 'Hide' : 'Show/Edit' }}
               </button>
-            </label>
+            </div>
             <div v-if="showKeyInEdit">
               <input
                 v-model="editingIdentity.identity_key"
                 type="text"
                 placeholder="Leave empty to keep current key"
-                class="w-full bg-white dark:bg-white/5 border border-stroke-subtle dark:border-stroke/10 rounded-lg px-4 py-2 text-content-primary dark:text-content-primary font-mono text-sm placeholder-gray-500 dark:placeholder-white/40 focus:outline-none focus:border-primary/50 transition-colors"
+                class="modal-input font-mono"
               />
               <p class="text-content-secondary dark:text-content-muted text-xs mt-1">
                 Leave empty to keep the current identity key
@@ -1097,91 +1125,97 @@ async function removeClient(publicKey: string, identityHash?: string) {
             </div>
           </div>
 
+          <!-- Node Name -->
           <div>
-            <label class="block text-content-secondary dark:text-content-primary/70 text-sm mb-2"
-              >Node Name</label
-            >
+            <label class="modal-field-label">Node Name</label>
             <input
               v-model="editingIdentity.settings.node_name"
               type="text"
-              class="w-full bg-white dark:bg-white/5 border border-stroke-subtle dark:border-stroke/10 rounded-lg px-4 py-2 text-content-primary dark:text-content-primary focus:outline-none focus:border-primary/50 transition-colors"
+              class="modal-input"
             />
           </div>
 
-          <div class="grid grid-cols-2 gap-4">
-            <div>
-              <label class="block text-content-secondary dark:text-content-primary/70 text-sm mb-2"
-                >Latitude</label
-              >
-              <input
-                v-model.number="editingIdentity.settings.latitude"
-                type="number"
-                step="0.000001"
-                class="w-full bg-white dark:bg-white/5 border border-stroke-subtle dark:border-stroke/10 rounded-lg px-4 py-2 text-content-primary dark:text-content-primary focus:outline-none focus:border-primary/50 transition-colors"
-              />
-            </div>
-            <div>
-              <label class="block text-content-secondary dark:text-content-primary/70 text-sm mb-2"
-                >Longitude</label
-              >
-              <input
-                v-model.number="editingIdentity.settings.longitude"
-                type="number"
-                step="0.000001"
-                class="w-full bg-white dark:bg-white/5 border border-stroke-subtle dark:border-stroke/10 rounded-lg px-4 py-2 text-content-primary dark:text-content-primary focus:outline-none focus:border-primary/50 transition-colors"
-              />
+          <!-- Location -->
+          <div>
+            <label class="modal-field-label">Location</label>
+            <button
+              type="button"
+              @click="showLocationPickerEdit = true"
+              class="flex items-center gap-1.5 px-2.5 py-1 mb-3 text-xs bg-background-mute dark:bg-white/5 hover:bg-stroke-subtle dark:hover:bg-white/10 text-content-secondary dark:text-content-primary rounded-lg border border-stroke-subtle dark:border-stroke/20 transition-colors"
+              title="Pick location on map"
+            >
+              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+              </svg>
+              Pick on Map
+            </button>
+            <div class="grid grid-cols-2 gap-5">
+              <div>
+                <label class="modal-field-label">Latitude</label>
+                <input
+                  v-model.number="editingIdentity.settings.latitude"
+                  type="number"
+                  step="0.000001"
+                  class="modal-input"
+                />
+              </div>
+              <div>
+                <label class="modal-field-label">Longitude</label>
+                <input
+                  v-model.number="editingIdentity.settings.longitude"
+                  type="number"
+                  step="0.000001"
+                  class="modal-input"
+                />
+              </div>
             </div>
           </div>
 
-          <div class="grid grid-cols-2 gap-4">
+          <!-- Passwords -->
+          <div class="grid grid-cols-2 gap-5">
             <div>
-              <label class="block text-content-secondary dark:text-content-primary/70 text-sm mb-2"
-                >Admin Password</label
-              >
+              <label class="modal-field-label">Admin Password (Optional)</label>
               <input
                 v-model="editingIdentity.settings.admin_password"
                 type="password"
                 placeholder="Leave empty for no password"
-                class="w-full bg-white dark:bg-white/5 border border-stroke-subtle dark:border-stroke/10 rounded-lg px-4 py-2 text-content-primary dark:text-content-primary placeholder-gray-500 dark:placeholder-white/40 focus:outline-none focus:border-primary/50 transition-colors"
+                class="modal-input"
               />
-              <p class="text-content-secondary dark:text-content-muted text-xs mt-1">
-                Full access to room server
-              </p>
+              <p class="text-content-secondary dark:text-content-muted text-xs mt-1">Full access to room server</p>
             </div>
             <div>
-              <label class="block text-content-secondary dark:text-content-primary/70 text-sm mb-2"
-                >Guest Password</label
-              >
+              <label class="modal-field-label">Guest Password (Optional)</label>
               <input
                 v-model="editingIdentity.settings.guest_password"
                 type="password"
                 placeholder="Leave empty for no password"
-                class="w-full bg-white dark:bg-white/5 border border-stroke-subtle dark:border-stroke/10 rounded-lg px-4 py-2 text-content-primary dark:text-content-primary placeholder-gray-500 dark:placeholder-white/40 focus:outline-none focus:border-primary/50 transition-colors"
+                class="modal-input"
               />
-              <p class="text-content-secondary dark:text-content-muted text-xs mt-1">
-                Read-only access
-              </p>
+              <p class="text-content-secondary dark:text-content-muted text-xs mt-1">Read-only access</p>
             </div>
           </div>
-        </div>
 
-        <div class="flex justify-end gap-3 mt-6">
-          <button
-            @click="closeModals"
-            class="px-4 py-2 bg-background-mute dark:bg-white/5 hover:bg-stroke-subtle dark:hover:bg-white/10 text-content-primary dark:text-content-primary rounded-lg transition-colors"
-          >
-            Cancel
-          </button>
-          <button
-            @click="updateIdentity"
-            class="px-4 py-2 bg-primary/20 hover:bg-primary/30 text-primary rounded-lg border border-primary/50 transition-colors"
-          >
-            Update
-          </button>
-        </div>
+          <!-- Actions -->
+          <div class="modal-actions">
+            <button type="button" @click="closeModals" class="modal-btn-cancel">Cancel</button>
+            <button type="submit" class="modal-btn-primary">Update</button>
+          </div>
+
+        </form>
       </div>
     </div>
+    </Transition>
     </Teleport>
+
+    <!-- Location Picker for Edit modal -->
+    <LocationPicker
+      :is-open="showLocationPickerEdit"
+      :latitude="editingIdentity?.settings?.latitude"
+      :longitude="editingIdentity?.settings?.longitude"
+      @close="showLocationPickerEdit = false"
+      @select="handleLocationPickerSelectEdit"
+    />
   </div>
 
   <!-- Confirm Delete Dialog -->

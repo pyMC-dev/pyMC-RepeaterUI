@@ -117,28 +117,28 @@ function handleCancel() {
           </div>
 
           <!-- Form -->
-          <form @submit.prevent="handleDone" class="space-y-6">
+          <form @submit.prevent="handleDone" class="modal-form">
 
             <!-- Name (full width) -->
             <div>
-              <label class="block text-xs font-medium text-content-secondary dark:text-content-muted mt-4 mb-1">
+              <label class="modal-field-label">
                 Name <span class="text-red-500">*</span>
               </label>
               <input
                 v-model="draft.name"
                 type="text"
                 placeholder="Broker Name"
-                class="w-full px-3 py-2 text-sm rounded-md bg-background-mute dark:bg-white/5 border border-stroke-subtle dark:border-stroke/10 text-content-primary dark:text-content-primary placeholder-content-muted dark:placeholder-content-muted/50 focus:outline-none focus:border-primary transition-colors"
+                class="modal-input"
               />
             </div>
 
             <!-- Row: Format (left) | Enabled (right) -->
             <div class="grid grid-cols-2 gap-5 items-end">
               <div>
-                <label class="block text-xs font-medium text-content-secondary dark:text-content-muted mt-4 mb-1">
+                <label class="modal-field-label">
                   Format <span class="text-red-500">*</span>
                 </label>
-                <select v-model="draft.format" class="w-full px-3 py-2 text-sm rounded-md bg-background-mute dark:bg-white/5 border border-stroke-subtle dark:border-stroke/10 text-content-primary dark:text-content-primary focus:outline-none focus:border-primary transition-colors">
+                <select v-model="draft.format" class="modal-select">
                   <option value="letsmesh">LetsMesh MQTT format</option>
                   <option value="mqtt">pyMC MQTT format</option>
                 </select>
@@ -158,14 +158,14 @@ function handleCancel() {
             <!-- Base Topic — left column only, shown when format = mqtt -->
             <div v-if="draft.format === 'mqtt'" class="grid grid-cols-2 gap-5">
               <div>
-                <label class="block text-xs font-medium text-content-secondary dark:text-content-muted mt-4 mb-1">
+                <label class="modal-field-label">
                   MQTT Base Topic
                   <span class="font-normal text-content-muted dark:text-content-muted/60 ml-1">(e.g. meshcore/repeater)</span>
                 </label>
                 <input
                   v-model="draft.base_topic"
                   placeholder="meshcore/repeater"
-                  class="w-full px-3 py-2 text-sm rounded-md bg-background-mute dark:bg-white/5 border border-stroke-subtle dark:border-stroke/10 text-content-primary dark:text-content-primary placeholder-content-muted dark:placeholder-content-muted/50 focus:outline-none focus:border-primary transition-colors"
+                  class="modal-input"
                 />
               </div>
               <div></div>
@@ -175,10 +175,10 @@ function handleCancel() {
             <!-- Row: Transport (left) | JWT Auth toggle (right) -->
             <div class="grid grid-cols-2 gap-5 items-end">
               <div>
-                <label class="block text-xs font-medium text-content-secondary dark:text-content-muted mt-4 mb-1">
+                <label class="modal-field-label">
                   Transport <span class="text-red-500">*</span>
                 </label>
-                <select v-model="draft.transport" class="w-full px-3 py-2 text-sm rounded-md bg-background-mute dark:bg-white/5 border border-stroke-subtle dark:border-stroke/10 text-content-primary dark:text-content-primary focus:outline-none focus:border-primary transition-colors">
+                <select v-model="draft.transport" class="modal-select">
                   <option value="websockets">Websockets</option>
                   <option value="tcp">TCP</option>
                 </select>
@@ -199,7 +199,7 @@ function handleCancel() {
             <div class="grid grid-cols-2 gap-x-5 gap-y-0">
               <!-- Host -->
               <div>
-                <label class="block text-xs font-medium text-content-secondary dark:text-content-muted mt-4 mb-1">
+                <label class="modal-field-label">
                   Host <span class="text-red-500">*</span>
                 </label>
                 <input
@@ -207,14 +207,14 @@ function handleCancel() {
                   type="text"
                   placeholder="mqtt.myserver.com"
                   @blur="onHostChange"
-                  class="w-full px-3 py-2 text-sm rounded-md bg-background-mute dark:bg-white/5 border border-stroke-subtle dark:border-stroke/10 text-content-primary dark:text-content-primary placeholder-content-muted dark:placeholder-content-muted/50 focus:outline-none focus:border-primary transition-colors font-mono"
+                  class="modal-input font-mono"
                 />
               </div>
 
               <!-- Audience or Username -->
               <div>
                 <template v-if="draft.use_jwt_auth">
-                  <label class="block text-xs font-medium text-content-secondary dark:text-content-muted mt-4 mb-1">
+                  <label class="modal-field-label">
                     Audience <span class="text-red-500">*</span>
                     <span class="font-normal text-content-muted dark:text-content-muted/60 ml-1">(usually same as host)</span>
                   </label>
@@ -222,11 +222,11 @@ function handleCancel() {
                     v-model="draft.audience"
                     type="text"
                     placeholder="mqtt.myserver.com"
-                    class="w-full px-3 py-2 text-sm rounded-md bg-background-mute dark:bg-white/5 border border-stroke-subtle dark:border-stroke/10 text-content-primary dark:text-content-primary placeholder-content-muted dark:placeholder-content-muted/50 focus:outline-none focus:border-primary transition-colors font-mono"
+                    class="modal-input font-mono"
                   />
                 </template>
                 <template v-else>
-                  <label class="block text-xs font-medium text-content-secondary dark:text-content-muted mt-4 mb-1">
+                  <label class="modal-field-label">
                     Username
                     <span class="font-normal text-content-muted dark:text-content-muted/60 ml-1">(blank = anonymous)</span>
                   </label>
@@ -236,14 +236,14 @@ function handleCancel() {
                     v-model="draft.username"
                     type="text"
                     placeholder="username"
-                    class="w-full px-3 py-2 text-sm rounded-md bg-background-mute dark:bg-white/5 border border-stroke-subtle dark:border-stroke/10 text-content-primary dark:text-content-primary placeholder-content-muted dark:placeholder-content-muted/50 focus:outline-none focus:border-primary transition-colors"
+                    class="modal-input"
                   />
                 </template>
               </div>
 
               <!-- Port -->
               <div>
-                <label class="block text-xs font-medium text-content-secondary dark:text-content-muted mt-4 mb-1">
+                <label class="modal-field-label">
                   Port <span class="text-red-500">*</span>
                   <span class="font-normal text-content-muted dark:text-content-muted/60 ml-1">(443 WS, 1883 TCP)</span>
                 </label>
@@ -252,13 +252,13 @@ function handleCancel() {
                   type="number"
                   min="0"
                   max="65535"
-                  class="w-full px-3 py-2 text-sm rounded-md bg-background-mute dark:bg-white/5 border border-stroke-subtle dark:border-stroke/10 text-content-primary dark:text-content-primary focus:outline-none focus:border-primary transition-colors font-mono"
+                  class="modal-input font-mono"
                 />
               </div>
 
               <!-- Password: always in DOM so grid row height never changes; invisible when JWT auth is on -->
               <div :class="draft.use_jwt_auth ? 'invisible pointer-events-none' : ''" :aria-hidden="draft.use_jwt_auth ? 'true' : undefined">
-                <label class="block text-xs font-medium text-content-secondary dark:text-content-muted mt-4 mb-1">Password</label>
+                <label class="modal-field-label">Password</label>
                 <input type="password" autocomplete="current-password" style="display:none" />
                 <input
                   autocomplete="new-password"
@@ -267,7 +267,7 @@ function handleCancel() {
                   readonly
                   onfocus="this.removeAttribute('readonly');"
                   onblur="this.setAttribute('readonly', true);"
-                  class="w-full px-3 py-2 text-sm rounded-md bg-background-mute dark:bg-white/5 border border-stroke-subtle dark:border-stroke/10 text-content-primary dark:text-content-primary focus:outline-none focus:border-primary transition-colors"
+                  class="modal-input"
                 />
               </div>
             </div>
@@ -315,7 +315,7 @@ function handleCancel() {
 
             <!-- Block Packet Types (full width) -->
             <div>
-              <label class="block text-sm font-medium text-content-primary dark:text-content-primary mt-4 mb-2">
+              <label class="modal-field-label">
                 Block Packet Types
                 <span class="text-content-secondary dark:text-content-muted font-normal text-xs ml-1">(prevent publishing to broker)</span>
               </label>
@@ -341,11 +341,11 @@ function handleCancel() {
             </div>
 
             <!-- Actions -->
-            <div class="flex gap-3 pt-2">
+            <div class="modal-actions">
               <button
                 type="button"
                 @click="handleCancel"
-                class="flex-1 px-4 py-3 bg-background-mute dark:bg-white/5 hover:bg-stroke-subtle dark:hover:bg-white/10 border border-stroke-subtle dark:border-stroke/20 text-content-primary dark:text-content-primary rounded-lg transition-colors"
+                class="modal-btn-cancel"
               >
                 Cancel
               </button>

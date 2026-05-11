@@ -78,9 +78,19 @@
 
   /* ── Modal form elements ────────────────────────────────────────────────── */
 
-  /* Field label — mt-4 provides breathing room; space-y-6 on the form handles section gaps */
+  /* Apply to every modal <form> — flex column with gap avoids margin-collapse brittleness */
+  .modal-form {
+    @apply flex flex-col gap-4;
+  }
+
+  /* Field label — mt-2 provides subtle breathing room within a section; gap-4 on modal-form handles section-to-section spacing */
   .modal-field-label {
-    @apply block text-xs font-medium text-content-secondary dark:text-content-muted mt-4 mb-1;
+    @apply block text-xs font-medium text-content-secondary dark:text-content-muted mt-2 mb-1;
+  }
+
+  /* Label row — for labels that sit beside an inline action (e.g. Show/Edit toggle) */
+  .modal-field-label-row {
+    @apply flex items-baseline gap-3 mt-2 mb-1;
   }
 
   /* Text / number / password / mono inputs */

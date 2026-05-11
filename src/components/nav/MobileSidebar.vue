@@ -298,11 +298,12 @@ const dutyCycleBarStyle = computed(() => {
 
 <template>
   <div
-    class="fixed inset-0 z-[250] lg:hidden transition-opacity duration-300"
-    :class="showMobileSidebar ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'"
+    class="fixed inset-0 z-[250] lg:hidden"
+    :class="showMobileSidebar ? 'pointer-events-auto' : 'pointer-events-none'"
   >
     <div
-      class="absolute inset-0 bg-black/30 backdrop-blur-sm dark:bg-black/30"
+      class="absolute inset-0 bg-black/30 backdrop-blur-sm dark:bg-black/30 transition-opacity duration-300 cursor-pointer"
+      :class="showMobileSidebar ? 'opacity-100' : 'opacity-0'"
       @click="closeSidebar"
     ></div>
     <div

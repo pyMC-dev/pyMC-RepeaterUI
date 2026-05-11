@@ -223,9 +223,13 @@ export class ApiService {
   /**
    * Generic GET request
    */
-  static async get<T>(endpoint: string, params?: Record<string, unknown>): Promise<ApiResponse<T>> {
+  static async get<T>(
+    endpoint: string,
+    params?: Record<string, unknown>,
+    config?: AxiosRequestConfig,
+  ): Promise<ApiResponse<T>> {
     try {
-      const response = await apiClient.get(endpoint, { params });
+      const response = await apiClient.get(endpoint, { params, ...config });
       return response.data;
     } catch (error: unknown) {
       throw this.handleError(error);

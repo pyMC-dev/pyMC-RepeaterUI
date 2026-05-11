@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia';
 import { ref, computed } from 'vue';
-import ApiService from '@/utils/api';
+import ApiService, { apiClient } from '@/utils/api';
 import type { SystemStats } from '@/types/api';
 import { usePacketStore } from './packets';
 
@@ -115,7 +115,7 @@ export const useSystemStore = defineStore('system', () => {
   // Actions
   let _fetchPromise: Promise<SystemStats> | null = null;
 
-  async function fetchStats(): Promise<SystemStats> {
+  async function fetchStats(options?: { onFirstByte?: () => void }): Promise<SystemStats> {
     // Deduplicate: if a fetch is already in flight return the same promise
     if (_fetchPromise !== null) return _fetchPromise;
 
@@ -124,7 +124,36 @@ export const useSystemStore = defineStore('system', () => {
         isLoading.value = true;
         error.value = null;
 
-        const response = await ApiService.get<SystemStats>('/stats');
+        // /stats is slow on embedded hardware (SPI reads, config parsing) and the
+        // response body is large. A total-elapsed timeout abandons slow-but-active
+        // transfers. Instead use an idle timeout: reset the clock on every incoming
+        // chunk so we only abort if the connection actually goes silent.
+        const controller = new AbortController();
+        const IDLE_MS = 15_000;
+        let idleTimer = window.setTimeout(() => controller.abort(), IDLE_MS);
+        let firstByteReceived = false;
+        const resetIdle = () => {
+          if (!firstByteReceived) {
+            firstByteReceived = true;
+            options?.onFirstByte?.();
+          }
+          clearTimeout(idleTimer);
+          idleTimer = window.setTimeout(() => controller.abort(), IDLE_MS);
+        };
+
+        let rawResponse;
+        try {
+          rawResponse = await apiClient.get('/stats', {
+            signal: controller.signal,
+            onDownloadProgress: resetIdle,
+            timeout: 0, // disable instance-level timeout; idle timer via AbortController handles it
+          });
+        } finally {
+          clearTimeout(idleTimer);
+        }
+
+        // apiClient returns the axios response directly; unwrap to match ApiResponse shape
+        const response = rawResponse.data as import('@/utils/api').ApiResponse<SystemStats>;
 
         let statsData: SystemStats;
         if (response.success && response.data) {

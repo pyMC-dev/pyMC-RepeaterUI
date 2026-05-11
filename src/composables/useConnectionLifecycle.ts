@@ -33,11 +33,13 @@ export function useConnectionLifecycle() {
 
   watch(
     () => appRuntime.canMaintainConnections,
-    (canMaintainConnections) => {
+    async (canMaintainConnections) => {
       if (canMaintainConnections) {
+        // Load all data over HTTP first, then open the WebSocket.
+        // Sequencing prevents HTTP and WS from competing on marginal links.
+        await dataService.bootstrap();
         websocketStore.allowReconnect();
         websocketStore.connect();
-        void dataService.bootstrap();
       } else if (!appRuntime.isOnline) {
         websocketStore.pause('offline');
       } else if (!appRuntime.isDocumentVisible) {

@@ -2,6 +2,7 @@ import { defineStore } from 'pinia';
 import { ref, computed } from 'vue';
 import ApiService from '@/utils/api';
 import type { SystemStats } from '@/types/api';
+import { usePacketStore } from './packets';
 
 const CONFIG_CACHE_KEY = 'pymc_config_cache';
 
@@ -139,6 +140,8 @@ export const useSystemStore = defineStore('system', () => {
         lastUpdated.value = new Date();
         updateControlStatesFromStats(statsData);
         saveConfigCache(statsData.config);
+        // Keep packetStore.systemStats in sync — avoids a redundant /stats fetch
+        usePacketStore().systemStats = statsData;
 
         return statsData;
       } catch (err) {

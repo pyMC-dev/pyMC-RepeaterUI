@@ -481,7 +481,7 @@ function onImportDone(imported: number) {
     <Teleport to="body">
     <div
       v-if="showCreateModal"
-      class="fixed inset-0 bg-black/50 backdrop-blur-lg flex items-center justify-center z-[99999] p-4"
+      class="fixed inset-0 bg-black/50 backdrop-blur-lg flex items-center justify-center z-[300] p-4"
       @click.self="showCreateModal = false"
     >
       <div
@@ -592,7 +592,7 @@ function onImportDone(imported: number) {
     <Teleport to="body">
     <div
       v-if="showEditModal && editingIdentity"
-      class="fixed inset-0 bg-black/50 backdrop-blur-lg flex items-center justify-center z-[99999] p-4"
+      class="fixed inset-0 bg-black/50 backdrop-blur-lg flex items-center justify-center z-[300] p-4"
       @click.self="closeModals"
     >
       <div

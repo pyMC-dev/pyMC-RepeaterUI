@@ -821,7 +821,7 @@ const toggleMobileSidebar = () => {
   <Teleport to="body">
     <div
       v-if="restarting"
-      class="fixed inset-0 z-[9999] bg-black/60 backdrop-blur-sm flex items-center justify-center"
+      class="fixed inset-0 z-[300] bg-black/60 backdrop-blur-sm flex items-center justify-center"
     >
       <div
         class="bg-surface dark:bg-surface-elevated rounded-2xl p-8 shadow-2xl max-w-sm w-full mx-4 text-center border border-stroke-subtle dark:border-stroke/20"

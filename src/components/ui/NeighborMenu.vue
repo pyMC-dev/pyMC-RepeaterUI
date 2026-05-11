@@ -184,7 +184,7 @@ onUnmounted(() => {
     <Teleport to="body">
       <div
         v-if="showMenu"
-        class="fixed w-36 bg-white dark:bg-surface-elevated backdrop-blur-lg border border-stroke-subtle dark:border-white/20 rounded-[15px] shadow-2xl z-[999999]"
+        class="fixed w-36 bg-white dark:bg-surface-elevated backdrop-blur-lg border border-stroke-subtle dark:border-white/20 rounded-[15px] shadow-2xl z-[450]"
         :style="{ top: menuPosition.top + 'px', left: menuPosition.left + 'px' }"
         data-menu-container
       >

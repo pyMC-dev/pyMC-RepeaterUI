@@ -485,7 +485,7 @@ function reloadPage() {
   <Teleport to="body">
     <div
       v-if="props.show"
-      class="fixed inset-0 bg-black/50 backdrop-blur-sm z-[99999] flex items-center justify-center p-4"
+      class="fixed inset-0 bg-black/50 backdrop-blur-sm z-[300] flex items-center justify-center p-4"
       @click="handleBackdropClick"
     >
       <div

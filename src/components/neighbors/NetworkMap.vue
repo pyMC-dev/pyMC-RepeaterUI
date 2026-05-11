@@ -52,12 +52,14 @@ interface Props {
   adverts: Advert[];
   baseLatitude?: number | null;
   baseLongitude?: number | null;
+  statsLoading?: boolean;
   showLegend?: boolean;
 }
 
 const props = withDefaults(defineProps<Props>(), {
   baseLatitude: null,
   baseLongitude: null,
+  statsLoading: false,
   showLegend: true,
 });
 
@@ -772,6 +774,14 @@ watch(
   { immediate: false },
 );
 
+// If base coordinates arrive after mount (slow stats response on marginal links),
+// initialise the map now that we have what we need
+watch(hasValidCoordinates, (isValid) => {
+  if (isValid && props.adverts.length > 0 && !map) {
+    nextTick(() => initializeOpenStreetMap());
+  }
+});
+
 // Lifecycle
 onMounted(() => {
   // Start observing theme changes
@@ -795,12 +805,19 @@ onUnmounted(() => {
 
 <template>
   <div class="map-container">
-    <!-- Loading indicator when coordinates are invalid -->
+    <!-- Placeholder when coordinates are unavailable -->
     <div
       v-if="!hasValidCoordinates"
       class="flex items-center justify-center h-96 glass-card backdrop-blur border border-black/6 dark:border-white/10 rounded-[12px] shadow-sm dark:shadow-none"
     >
-      <div class="text-center text-content-primary dark:text-content-primary">
+      <!-- Stats still in flight — show spinner -->
+      <div v-if="props.statsLoading" class="flex items-center gap-2 text-content-secondary dark:text-content-muted">
+        <div class="animate-spin rounded-full h-3 w-3 border-b-2 border-primary"></div>
+        <p class="text-xs sm:text-sm">Fetching base station location…</p>
+      </div>
+
+      <!-- Stats returned but no valid coordinates configured -->
+      <div v-else class="text-center text-content-primary dark:text-content-primary">
         <svg
           class="w-8 h-8 mx-auto mb-2 text-content-muted dark:text-content-muted"
           fill="currentColor"
@@ -831,7 +848,7 @@ onUnmounted(() => {
     <button
       v-if="hasValidCoordinates && adverts.length > 0"
       @click="toggleLegend"
-      class="absolute bottom-3 right-3 z-[1001] flex items-center gap-2 px-3 py-2 bg-black/40 border border-white/10 rounded-lg text-white/80 hover:bg-white/10 hover:text-white transition-colors text-sm backdrop-blur-sm"
+      class="absolute bottom-3 right-3 z-[200] flex items-center gap-2 px-3 py-2 bg-black/40 border border-white/10 rounded-lg text-white/80 hover:bg-white/10 hover:text-white transition-colors text-sm backdrop-blur-sm"
     >
       <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path

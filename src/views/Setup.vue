@@ -704,7 +704,7 @@ const stepTitles = [
     <Transition name="modal">
       <div
         v-if="showRestarting"
-        class="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/75 backdrop-blur-md"
+        class="fixed inset-0 z-[500] flex items-center justify-center p-4 bg-black/75 backdrop-blur-md"
       >
         <div
           class="bg-white dark:bg-surface-elevated backdrop-blur-xl max-w-sm w-full p-10 rounded-[24px] border border-stroke-subtle dark:border-white/20 shadow-[0_8px_48px_0_rgba(0,0,0,0.5)] flex flex-col items-center gap-6"

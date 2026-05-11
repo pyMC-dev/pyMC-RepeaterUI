@@ -1,12 +1,20 @@
 <script setup lang="ts">
-import { ref, onMounted, watch } from 'vue';
+import { ref, onMounted, watch, computed } from 'vue';
 import ApiService from '@/utils/api';
 import { getPreference, setPreference } from '@/utils/preferences';
+import { useSystemStore } from '@/stores/system';
 import ConfirmDialog from '@/components/modals/ConfirmDialog.vue';
 import MessageDialog from '@/components/modals/MessageDialog.vue';
 import RestartModal from '@/components/modals/RestartModal.vue';
+import LocationPicker from '@/components/modals/LocationPicker.vue';
 
 defineOptions({ name: 'RoomServersView' });
+
+const systemStore = useSystemStore();
+const repeaterLat = computed(() => systemStore.stats?.config?.repeater?.latitude ?? 0);
+const repeaterLng = computed(() => systemStore.stats?.config?.repeater?.longitude ?? 0);
+
+const showLocationPickerCreate = ref(false);
 
 const loading = ref(false);
 const error = ref<string | null>(null);
@@ -90,7 +98,6 @@ async function createIdentity() {
 
     if (response.success) {
       showCreateModal.value = false;
-      resetForm();
       await fetchIdentities();
       showRestartModal.value = true;
     } else {
@@ -187,13 +194,23 @@ function resetForm() {
     type: 'room_server',
     settings: {
       node_name: '',
-      latitude: 0,
-      longitude: 0,
+      latitude: repeaterLat.value,
+      longitude: repeaterLng.value,
       admin_password: '',
       guest_password: '',
     },
   };
   showKeyInCreate.value = false;
+}
+
+function openCreateModal() {
+  resetForm();
+  showCreateModal.value = true;
+}
+
+function handleLocationPickerSelect(location: { latitude: number; longitude: number }) {
+  newIdentity.value.settings.latitude = location.latitude;
+  newIdentity.value.settings.longitude = location.longitude;
 }
 
 function closeModals() {
@@ -202,7 +219,6 @@ function closeModals() {
   editingIdentity.value = null;
   showKeyInCreate.value = false;
   showKeyInEdit.value = false;
-  resetForm();
 }
 
 function toggleKeyVisibility(identityName: string) {
@@ -441,7 +457,7 @@ async function removeClient(publicKey: string, identityHash?: string) {
           </div>
         </div>
         <button
-          @click="showCreateModal = true"
+          @click="openCreateModal"
           class="group relative px-6 py-3 bg-gradient-to-r from-primary/30 to-secondary/30 hover:from-primary/40 hover:to-secondary/40 text-content-primary dark:text-content-primary rounded-[12px] border border-primary/50 transition-all hover:scale-105 hover:shadow-lg hover:shadow-primary/20"
         >
           <span class="flex items-center gap-2">
@@ -837,7 +853,7 @@ async function removeClient(publicKey: string, identityHash?: string) {
         <p class="text-lg mb-2">No room servers configured</p>
         <p class="text-sm mb-4">Add your first room server to get started</p>
         <button
-          @click="showCreateModal = true"
+          @click="openCreateModal"
           class="px-4 py-2 bg-primary/20 hover:bg-primary/30 text-primary rounded-lg border border-primary/50 transition-colors"
         >
           + Add Room Server
@@ -849,7 +865,7 @@ async function removeClient(publicKey: string, identityHash?: string) {
     <Teleport to="body">
     <div
       v-if="showCreateModal"
-      class="fixed inset-0 bg-black/50 backdrop-blur-lg flex items-center justify-center z-[99999] p-4"
+      class="fixed inset-0 bg-black/50 backdrop-blur-lg flex items-center justify-center z-[300] p-4"
       @click.self="showCreateModal = false"
     >
       <div
@@ -911,28 +927,41 @@ async function removeClient(publicKey: string, identityHash?: string) {
             />
           </div>
 
-          <div class="grid grid-cols-2 gap-4">
-            <div>
-              <label class="block text-content-secondary dark:text-content-primary/70 text-sm mb-2"
-                >Latitude</label
+          <div>
+            <div class="flex items-center justify-between mb-2">
+              <label class="text-content-secondary dark:text-content-primary/70 text-sm">Location</label>
+              <button
+                type="button"
+                @click="showLocationPickerCreate = true"
+                class="flex items-center gap-1.5 px-2.5 py-1 text-xs bg-background-mute dark:bg-white/5 hover:bg-stroke-subtle dark:hover:bg-white/10 text-content-secondary dark:text-content-primary rounded-lg border border-stroke-subtle dark:border-stroke/20 transition-colors"
+                title="Pick location on map"
               >
-              <input
-                v-model.number="newIdentity.settings.latitude"
-                type="number"
-                step="0.000001"
-                class="w-full bg-white dark:bg-white/5 border border-stroke-subtle dark:border-stroke/10 rounded-lg px-4 py-2 text-content-primary dark:text-content-primary focus:outline-none focus:border-primary/50 transition-colors"
-              />
+                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+                </svg>
+                Pick on Map
+              </button>
             </div>
-            <div>
-              <label class="block text-content-secondary dark:text-content-primary/70 text-sm mb-2"
-                >Longitude</label
-              >
-              <input
-                v-model.number="newIdentity.settings.longitude"
-                type="number"
-                step="0.000001"
-                class="w-full bg-white dark:bg-white/5 border border-stroke-subtle dark:border-stroke/10 rounded-lg px-4 py-2 text-content-primary dark:text-content-primary focus:outline-none focus:border-primary/50 transition-colors"
-              />
+            <div class="grid grid-cols-2 gap-4">
+              <div>
+                <label class="block text-content-secondary dark:text-content-primary/70 text-xs mb-1">Latitude</label>
+                <input
+                  v-model.number="newIdentity.settings.latitude"
+                  type="number"
+                  step="0.000001"
+                  class="w-full bg-white dark:bg-white/5 border border-stroke-subtle dark:border-stroke/10 rounded-lg px-4 py-2 text-content-primary dark:text-content-primary focus:outline-none focus:border-primary/50 transition-colors"
+                />
+              </div>
+              <div>
+                <label class="block text-content-secondary dark:text-content-primary/70 text-xs mb-1">Longitude</label>
+                <input
+                  v-model.number="newIdentity.settings.longitude"
+                  type="number"
+                  step="0.000001"
+                  class="w-full bg-white dark:bg-white/5 border border-stroke-subtle dark:border-stroke/10 rounded-lg px-4 py-2 text-content-primary dark:text-content-primary focus:outline-none focus:border-primary/50 transition-colors"
+                />
+              </div>
             </div>
           </div>
 
@@ -986,11 +1015,20 @@ async function removeClient(publicKey: string, identityHash?: string) {
     </div>
     </Teleport>
 
+    <!-- Location Picker for Create modal -->
+    <LocationPicker
+      :is-open="showLocationPickerCreate"
+      :latitude="newIdentity.settings.latitude"
+      :longitude="newIdentity.settings.longitude"
+      @close="showLocationPickerCreate = false"
+      @select="handleLocationPickerSelect"
+    />
+
     <!-- Edit Modal -->
     <Teleport to="body">
     <div
       v-if="showEditModal && editingIdentity"
-      class="fixed inset-0 bg-black/50 backdrop-blur-lg flex items-center justify-center z-[99999] p-4"
+      class="fixed inset-0 bg-black/50 backdrop-blur-lg flex items-center justify-center z-[300] p-4"
       @click.self="showEditModal = false"
     >
       <div
@@ -1169,7 +1207,7 @@ async function removeClient(publicKey: string, identityHash?: string) {
   <Teleport to="body">
   <div
     v-if="showMessagesDialog"
-    class="fixed inset-0 bg-black/70 backdrop-blur-lg flex items-center justify-center z-[99999] p-4"
+    class="fixed inset-0 bg-black/70 backdrop-blur-lg flex items-center justify-center z-[300] p-4"
     @click.self="showMessagesDialog = false"
   >
     <div
@@ -1537,9 +1575,10 @@ async function removeClient(publicKey: string, identityHash?: string) {
   </Teleport>
 
   <!-- Sessions Dialog -->
+  <Teleport to="body">
   <div
     v-if="showSessionsDialog"
-    class="fixed inset-0 bg-black/70 backdrop-blur-md flex items-center justify-center z-[60] p-4"
+    class="fixed inset-0 bg-black/70 backdrop-blur-md flex items-center justify-center z-[350] p-4"
   >
     <div
       class="bg-white dark:bg-surface-elevated backdrop-blur-xl border border-stroke-subtle dark:border-white/10 rounded-[15px] p-6 max-w-3xl w-full max-h-[80vh] flex flex-col"
@@ -1652,4 +1691,5 @@ async function removeClient(publicKey: string, identityHash?: string) {
       </div>
     </div>
   </div>
+  </Teleport>
 </template>

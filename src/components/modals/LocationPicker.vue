@@ -175,9 +175,10 @@ onUnmounted(() => {
 </script>
 
 <template>
+  <Teleport to="body">
   <div
     v-if="isOpen"
-    class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm"
+    class="fixed inset-0 z-[400] flex items-center justify-center p-4 bg-black/50 backdrop-blur-lg"
     @click.self="handleClose"
   >
     <div
@@ -282,6 +283,7 @@ onUnmounted(() => {
       </div>
     </div>
   </div>
+  </Teleport>
 </template>
 
 <style scoped>

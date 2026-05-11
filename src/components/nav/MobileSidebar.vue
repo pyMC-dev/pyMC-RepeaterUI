@@ -325,7 +325,7 @@ const dutyCycleBarStyle = computed(() => {
 
 <template>
   <div
-    class="fixed inset-0 z-[1010] lg:hidden transition-opacity duration-300"
+    class="fixed inset-0 z-[250] lg:hidden transition-opacity duration-300"
     :class="showMobileSidebar ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'"
   >
     <div

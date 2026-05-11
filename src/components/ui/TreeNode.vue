@@ -207,7 +207,7 @@ function copyToClipboard(event: Event) {
           <!-- Full key display - improved popup -->
           <div
             v-if="showFullKey"
-            class="fixed inset-0 z-[9998] flex items-center justify-center bg-black/70 backdrop-blur-md"
+            class="fixed inset-0 z-[300] flex items-center justify-center bg-black/70 backdrop-blur-md"
             @click="showFullKey = false"
           >
             <div

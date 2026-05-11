@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, watch, onBeforeUnmount } from 'vue';
+import Spinner from '@/components/ui/Spinner.vue';
 import apiClient from '@/utils/api';
 
 interface Props {
@@ -94,16 +95,7 @@ onBeforeUnmount(() => {
 
           <!-- Restarting state: spinner -->
           <div v-if="isRestarting" class="flex flex-col items-center gap-5 py-2">
-            <svg class="spinner-svg" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
-              <rect
-                v-for="i in 8"
-                :key="i"
-                x="47.5" y="14" width="5" height="18" rx="2.5"
-                class="spinner-bar"
-                :transform="`rotate(${(i - 1) * 45}, 50, 50)`"
-                :style="`animation-delay: ${(i - 1) * 125}ms`"
-              />
-            </svg>
+            <Spinner size="lg" />
             <div class="text-center">
               <h3 class="text-base font-semibold text-content-primary dark:text-content-primary">
                 Restarting&hellip;
@@ -182,27 +174,3 @@ onBeforeUnmount(() => {
   </Teleport>
 </template>
 
-<style scoped>
-.spinner-svg {
-  width: 72px;
-  height: 72px;
-}
-
-.spinner-bar {
-  fill: transparent;
-  stroke: rgb(34 197 94);
-  stroke-width: 0.5;
-  animation: bar-fill 1s ease-in-out infinite;
-}
-
-@keyframes bar-fill {
-  0%, 100% {
-    fill: transparent;
-    opacity: 0.2;
-  }
-  40%, 60% {
-    fill: rgb(34 197 94);
-    opacity: 1;
-  }
-}
-</style>

@@ -15,6 +15,7 @@ const showCreateModal = ref(false);
 const showEditModal = ref(false);
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const editingIdentity = ref<any>(null);
+const editOriginalName = ref('');
 const showKeyInCreate = ref(false);
 const showKeyInEdit = ref(false);
 const visibleKeys = ref<Set<string>>(new Set());
@@ -88,18 +89,21 @@ async function createIdentity() {
 }
 
 async function updateIdentity() {
+  const payload: Record<string, unknown> = {
+    name: editOriginalName.value,
+    identity_key: editingIdentity.value.identity_key,
+    type: 'companion',
+    settings: {
+      node_name: editingIdentity.value.settings?.node_name,
+      tcp_port: editingIdentity.value.settings?.tcp_port,
+      bind_address: editingIdentity.value.settings?.bind_address,
+    },
+  };
+  if (editingIdentity.value.name !== editOriginalName.value) {
+    payload.new_name = editingIdentity.value.name;
+  }
   try {
-    const response = await ApiService.updateIdentity({
-      name: editingIdentity.value.name,
-      new_name: editingIdentity.value.new_name,
-      identity_key: editingIdentity.value.identity_key,
-      type: 'companion',
-      settings: {
-        node_name: editingIdentity.value.settings?.node_name,
-        tcp_port: editingIdentity.value.settings?.tcp_port,
-        bind_address: editingIdentity.value.settings?.bind_address,
-      },
-    });
+    const response = await ApiService.updateIdentity(payload);
 
     if (response.success) {
       showEditModal.value = false;
@@ -146,10 +150,11 @@ function showMessage(message: string, variant: 'success' | 'error' | 'info') {
 
 function openEditModal(identity: unknown) {
   editingIdentity.value = JSON.parse(JSON.stringify(identity));
+  editOriginalName.value = editingIdentity.value.name;
+  delete editingIdentity.value.new_name;
   if (!editingIdentity.value.settings) {
     editingIdentity.value.settings = { node_name: '', tcp_port: 5000, bind_address: '0.0.0.0' };
   }
-  editingIdentity.value.new_name = '';
   showKeyInEdit.value = false;
   showEditModal.value = true;
 }
@@ -605,25 +610,12 @@ function onImportDone(imported: number) {
         <div class="space-y-4">
           <div>
             <label class="block text-content-secondary dark:text-content-primary/70 text-sm mb-2"
-              >Current Name</label
+              >Name *</label
             >
             <input
-              :value="editingIdentity.name"
-              disabled
+              v-model="editingIdentity.name"
               type="text"
-              class="w-full bg-background-mute dark:bg-white/5 border border-stroke-subtle dark:border-stroke/10 rounded-lg px-4 py-2 text-content-muted dark:text-content-muted cursor-not-allowed"
-            />
-          </div>
-
-          <div>
-            <label class="block text-content-secondary dark:text-content-primary/70 text-sm mb-2"
-              >New Name (optional)</label
-            >
-            <input
-              v-model="editingIdentity.new_name"
-              type="text"
-              placeholder="Leave empty to keep current name"
-              class="w-full bg-white dark:bg-white/5 border border-stroke-subtle dark:border-stroke/10 rounded-lg px-4 py-2 text-content-primary dark:text-content-primary placeholder-gray-500 dark:placeholder-white/40 focus:outline-none focus:border-primary/50 transition-colors"
+              class="w-full bg-white dark:bg-white/5 border border-stroke-subtle dark:border-stroke/10 rounded-lg px-4 py-2 text-content-primary dark:text-content-primary focus:outline-none focus:border-primary/50 transition-colors"
             />
           </div>
 

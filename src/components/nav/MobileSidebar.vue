@@ -118,6 +118,7 @@ const iconComponents = {
   neighbors: NeighborsIcon,
   statistics: StatsIcon,
   gps: GpsIcon,
+  sensors: SystemIcon,
   'system-stats': SystemIcon,
   sessions: SystemIcon, // Reuse SystemIcon for sessions
   configuration: ConfigurationsIcon,
@@ -137,6 +138,7 @@ const baseSidebarItems: Array<{ name: string; icon: IconKey; route: string; grou
   { name: 'Neighbors', icon: 'neighbors', route: '/neighbors', group: 'monitoring' },
   { name: 'Statistics', icon: 'statistics', route: '/statistics', group: 'monitoring' },
   { name: 'GPS', icon: 'gps', route: '/gps', group: 'monitoring' },
+  { name: 'Sensors', icon: 'sensors', route: '/sensors', group: 'monitoring' },
   { name: 'System Stats', icon: 'system-stats', route: '/system-stats', group: 'monitoring' },
   { name: 'Sessions', icon: 'sessions', route: '/sessions', group: 'system' },
   { name: 'Configuration', icon: 'configuration', route: '/configuration', group: 'system' },
@@ -152,8 +154,20 @@ const isGpsEnabled = computed(() => {
   return stats?.gps?.enabled === true || stats?.config?.gps?.enabled === true;
 });
 
+const isSensorsEnabled = computed(() => {
+  const stats = systemStore.stats as {
+    sensors?: { enabled?: boolean };
+    config?: { sensors?: { enabled?: boolean } };
+  } | null;
+  return stats?.sensors?.enabled === true || stats?.config?.sensors?.enabled === true;
+});
+
 const sidebarItems = computed(() =>
-  baseSidebarItems.filter((item) => item.route !== '/gps' || isGpsEnabled.value),
+  baseSidebarItems.filter(
+    (item) =>
+      (item.route !== '/gps' || isGpsEnabled.value) &&
+      (item.route !== '/sensors' || isSensorsEnabled.value),
+  ),
 );
 
 const navMonitoring = computed(() => sidebarItems.value.filter((i) => i.group === 'monitoring'));

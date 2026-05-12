@@ -181,6 +181,12 @@ export interface SystemStats {
       path_hash_mode?: number; // 0 = 1-byte, 1 = 2-byte, 2 = 3-byte
       unscoped_flood_allow?: boolean;
     };
+    sensors?: {
+      enabled?: boolean;
+      poll_interval_seconds?: number;
+      auto_install_packages?: boolean;
+      definitions?: Array<Record<string, unknown>>;
+    };
     mqtt_brokers?: {
       iata_code?: string;
       status_interval?: number;
@@ -206,6 +212,21 @@ export interface SystemStats {
         }
       }>;
     };
+  };
+  sensors?: {
+    enabled?: boolean;
+    poll_interval_seconds?: number;
+    configured?: number;
+    loaded?: number;
+    running?: boolean;
+    readings?: Array<{
+      name?: string;
+      type?: string;
+      ok?: boolean;
+      timestamp?: string | null;
+      error?: string;
+      data?: Record<string, unknown>;
+    }>;
   };
   // Include other possible fields that might be returned by stats_getter
   [key: string]: unknown;

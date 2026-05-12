@@ -48,6 +48,12 @@ const router = createRouter({
       meta: { requiresAuth: true },
     },
     {
+      path: '/sensors',
+      name: 'sensors',
+      component: () => import('@/views/Sensors.vue'),
+      meta: { requiresAuth: true },
+    },
+    {
       path: '/configuration',
       name: 'configuration',
       component: () => import('@/views/Configuration.vue'),

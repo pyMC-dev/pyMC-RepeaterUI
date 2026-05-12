@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue';
+import { ref, onMounted, computed } from 'vue';
 import ApiService from '@/utils/api';
 import ConfirmDialog from '@/components/modals/ConfirmDialog.vue';
 import MessageDialog from '@/components/modals/MessageDialog.vue';
@@ -195,6 +195,14 @@ function toggleKeyVisibility(identityName: string) {
 const configuredCompanions = () => identities.value?.configured_companions ?? [];
 const totalCompanions = () => identities.value?.total_configured_companions ?? 0;
 
+const companionConfiguredCount = computed(() => identities.value?.configured_companions?.length ?? 0);
+const companionRegisteredCount = computed(
+  () => identities.value?.configured_companions?.filter((c: any) => c.registered).length ?? 0,
+);
+const companionsSynced = computed(
+  () => companionRegisteredCount.value === companionConfiguredCount.value,
+);
+
 const DEFAULT_COMPANION_PORT = 5050;
 const MIN_PORT = 1;
 const MAX_PORT = 65535;
@@ -293,20 +301,64 @@ function onImportDone(imported: number) {
     </div>
 
     <!-- Stats -->
-    <div v-if="identities && totalCompanions() > 0" class="grid grid-cols-1 md:grid-cols-2 gap-4">
-      <div
-        class="group relative overflow-hidden glass-card backdrop-blur-xl border border-stroke-subtle dark:border-white/10 rounded-[15px] p-5"
-      >
-        <div class="relative flex items-center justify-between">
+    <div v-if="identities && companionConfiguredCount > 0" class="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <!-- Total Configured -->
+      <div class="glass-card backdrop-blur-xl border border-stroke-subtle dark:border-white/10 rounded-[15px] p-5">
+        <div class="flex items-center justify-between">
           <div>
-            <div
-              class="text-content-secondary dark:text-content-muted text-xs font-medium mb-2 uppercase tracking-wide"
-            >
+            <div class="text-content-secondary dark:text-content-muted text-xs font-medium mb-2 uppercase tracking-wide">
               Total Configured
             </div>
-            <div class="text-3xl font-bold text-content-primary dark:text-content-primary">
-              {{ totalCompanions() }}
+            <div class="text-3xl font-bold text-content-primary dark:text-content-primary mb-1">
+              {{ companionConfiguredCount }}
             </div>
+          </div>
+          <div class="bg-background-mute dark:bg-white/10 p-3 rounded-[12px]">
+            <svg class="w-6 h-6 text-content-secondary dark:text-content-primary/70" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" />
+            </svg>
+          </div>
+        </div>
+      </div>
+
+      <!-- Currently Registered -->
+      <div class="glass-card backdrop-blur-xl border border-stroke-subtle dark:border-white/10 rounded-[15px] p-5">
+        <div class="flex items-center justify-between">
+          <div>
+            <div class="text-content-secondary dark:text-content-muted text-xs font-medium mb-2 uppercase tracking-wide">
+              Currently Registered
+            </div>
+            <div class="text-3xl font-bold text-primary mb-1">
+              {{ companionRegisteredCount }}
+            </div>
+          </div>
+          <div class="bg-primary/20 p-3 rounded-[12px]">
+            <svg class="w-6 h-6 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+            </svg>
+          </div>
+        </div>
+      </div>
+
+      <!-- Status -->
+      <div class="glass-card backdrop-blur-xl border border-stroke-subtle dark:border-white/10 rounded-[15px] p-5">
+        <div class="flex items-center justify-between">
+          <div>
+            <div class="text-content-secondary dark:text-content-muted text-xs font-medium mb-2 uppercase tracking-wide">
+              Status
+            </div>
+            <div class="text-3xl font-bold" :class="companionsSynced ? 'text-accent-green' : 'text-accent-yellow'">
+              {{ companionsSynced ? 'Synced' : 'Out of Sync' }}
+            </div>
+          </div>
+          <div :class="['p-3 rounded-[12px]', companionsSynced ? 'bg-accent-green/20' : 'bg-accent-yellow/20']">
+            <svg v-if="companionsSynced" class="w-6 h-6 text-accent-green" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            <svg v-else class="w-6 h-6 text-accent-yellow" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
           </div>
         </div>
       </div>
@@ -345,9 +397,9 @@ function onImportDone(imported: number) {
         <div
           v-for="identity in configuredCompanions()"
           :key="identity.name"
-          class="group relative overflow-hidden glass-card backdrop-blur-xl rounded-[15px] p-5 border border-stroke-subtle dark:border-white/10 hover:border-primary/30 transition-all duration-300"
+          class="glass-card backdrop-blur-xl rounded-[15px] p-5 border border-stroke-subtle dark:border-white/10"
         >
-          <div class="relative flex items-start justify-between">
+          <div class="flex items-start justify-between">
             <div class="flex-1">
               <div class="flex items-center gap-3 mb-4">
                 <div class="relative">

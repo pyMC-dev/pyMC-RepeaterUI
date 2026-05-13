@@ -4,6 +4,8 @@ import { useRouter } from 'vue-router';
 import { useSystemStore } from '@/stores/system';
 import apiClient from '@/utils/api';
 import RestartModal from '@/components/modals/RestartModal.vue';
+import UnsavedChangesModal from '@/components/ui/UnsavedChangesModal.vue';
+import { useUnsavedChanges } from '@/composables/useUnsavedChanges';
 
 const router = useRouter();
 const systemStore = useSystemStore();
@@ -102,7 +104,7 @@ const cancelEditing = () => {
   preambleLength.value = config.preamble_length ?? 0;
 };
 
-const saveChanges = async () => {
+const saveChanges = async ({ silent = false }: { silent?: boolean } = {}): Promise<boolean> => {
   isSaving.value = true;
   error.value = null;
 
@@ -121,7 +123,8 @@ const saveChanges = async () => {
     if (data.message || data.persisted) {
       isEditing.value = false;
       await systemStore.fetchStats();
-      showRestartModal.value = true;
+      if (!silent) showRestartModal.value = true;
+      return true;
     } else if (data.error) {
       error.value = data.error;
     } else {
@@ -134,7 +137,17 @@ const saveChanges = async () => {
   } finally {
     isSaving.value = false;
   }
+  return false;
 };
+
+const { showUnsavedModal, requestLeave, handleDiscard, handleSave } = useUnsavedChanges(
+  isEditing,
+  isSaving,
+  cancelEditing,
+  () => saveChanges(),
+);
+
+defineExpose({ requestLeave, isEditing });
 
 </script>
 
@@ -143,6 +156,14 @@ const saveChanges = async () => {
     v-model="showRestartModal"
     title="Radio Settings Changes require a restart."
     message="Restart Now?"
+  />
+
+  <UnsavedChangesModal
+    :show="showUnsavedModal"
+    :is-saving="isSaving"
+    label="Radio Settings"
+    @discard="handleDiscard"
+    @save="handleSave"
   />
 
   <div class="space-y-12">
@@ -169,7 +190,7 @@ const saveChanges = async () => {
             Cancel
           </button>
           <button
-            @click="saveChanges"
+            @click="saveChanges()"
             :disabled="isSaving"
             class="cfg-btn-primary"
           >

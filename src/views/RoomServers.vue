@@ -597,7 +597,7 @@ async function removeClient(publicKey: string, identityHash?: string) {
           <div class="text-content-secondary dark:text-content-muted text-sm mb-4">{{ error }}</div>
           <button
             @click="fetchIdentities"
-            class="px-4 py-2 bg-primary/20 hover:bg-primary/30 text-content-primary dark:text-content-primary rounded-lg border border-primary/50 transition-colors"
+            class="btn-primary"
           >
             Retry
           </button>
@@ -770,13 +770,13 @@ async function removeClient(publicKey: string, identityHash?: string) {
               </button>
               <button
                 @click="openEditModal(identity)"
-                class="px-3 py-1 bg-primary/20 hover:bg-primary/30 text-primary rounded text-xs transition-colors"
+                class="btn-primary-xs"
               >
                 Edit
               </button>
               <button
                 @click="promptDeleteIdentity(identity.name)"
-                class="px-3 py-1 bg-accent-red/20 hover:bg-accent-red/30 text-accent-red rounded text-xs transition-colors"
+                class="btn-danger-xs"
               >
                 Delete
               </button>
@@ -804,7 +804,7 @@ async function removeClient(publicKey: string, identityHash?: string) {
         <p class="text-sm mb-4">Add your first room server to get started</p>
         <button
           @click="openCreateModal"
-          class="px-4 py-2 bg-primary/20 hover:bg-primary/30 text-primary rounded-lg border border-primary/50 transition-colors"
+          class="btn-primary"
         >
           + Add Room Server
         </button>
@@ -1304,7 +1304,7 @@ async function removeClient(publicKey: string, identityHash?: string) {
             </div>
             <button
               @click="fetchRoomMessages(true)"
-              class="px-4 py-2 bg-primary/20 hover:bg-primary/30 text-content-primary dark:text-content-primary rounded-lg border border-primary/50 transition-colors"
+              class="btn-primary"
             >
               Retry
             </button>

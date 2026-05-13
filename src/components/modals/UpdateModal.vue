@@ -471,7 +471,8 @@ function handleBackdropClick(e: MouseEvent) {
   if (
     e.target === e.currentTarget &&
     installState.value !== 'installing' &&
-    installState.value !== 'restarting'
+    installState.value !== 'restarting' &&
+    installState.value !== 'verified'
   ) {
     emit('close');
   }
@@ -486,7 +487,7 @@ function reloadPage() {
   <Teleport to="body">
     <div
       v-if="props.show"
-      class="fixed inset-0 bg-black/50 backdrop-blur-sm z-[300] flex items-center justify-center p-4"
+      class="modal-backdrop"
       @click="handleBackdropClick"
     >
       <div
@@ -521,7 +522,7 @@ function reloadPage() {
             </div>
           </div>
           <button
-            v-if="installState !== 'installing' && installState !== 'restarting'"
+            v-if="installState !== 'installing' && installState !== 'restarting' && installState !== 'verified'"
             @click="emit('close')"
             class="text-content-secondary hover:text-content-primary transition-colors"
           >
@@ -705,14 +706,14 @@ function reloadPage() {
             <div class="flex gap-2">
               <select
                 v-model="selectedChannel"
-                :disabled="loadingChannels || installState === 'installing' || checkingVersion"
+                :disabled="loadingChannels || installState === 'installing' || installState === 'verified' || checkingVersion"
                 class="flex-1 bg-background-mute dark:bg-surface border border-stroke-subtle dark:border-stroke/20 rounded-xl px-3 py-2 text-sm text-content-primary dark:text-content-primary disabled:opacity-50 focus:outline-none focus:ring-1 focus:ring-primary"
               >
                 <option v-for="ch in channels" :key="ch" :value="ch">{{ ch }}</option>
               </select>
               <button
                 @click="applyChannel"
-                :disabled="loadingChannels || installState === 'installing' || checkingVersion"
+                :disabled="loadingChannels || installState === 'installing' || installState === 'verified' || checkingVersion"
                 class="px-4 py-2 bg-primary/10 hover:bg-primary/20 text-primary rounded-xl text-sm font-medium disabled:opacity-50 transition-colors"
               >
                 {{ loadingChannels || checkingVersion ? '…' : 'Apply' }}
@@ -881,10 +882,10 @@ function reloadPage() {
                 </svg>
               </div>
               <div>
-                <p class="font-semibold text-gray-900 dark:text-content-primary">
+                <p class="font-semibold text-content-primary">
                   Installed successfully!
                 </p>
-                <p class="text-xs text-gray-600 dark:text-content-muted mt-0.5">
+                <p class="text-xs text-content-muted mt-0.5">
                   Running version
                   <span class="font-mono font-semibold">{{ postRestartVersion }}</span>
                 </p>
@@ -892,7 +893,7 @@ function reloadPage() {
             </div>
             <button
               @click="reloadPage"
-              class="mt-3 w-full py-2 px-4 rounded-xl text-sm font-semibold text-white bg-primary hover:bg-primary/90 transition-colors"
+              class="modal-btn-primary w-full mt-3 text-sm font-semibold"
             >
               Refresh Page to Load New Version
             </button>
@@ -963,12 +964,12 @@ function reloadPage() {
             class="flex-1 py-3 rounded-xl font-semibold text-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             :class="
               installState === 'verified' || installState === 'complete'
-                ? 'bg-accent-green/20 text-accent-green cursor-default'
+                ? 'bg-accent-green/20 text-accent-green border border-accent-green/50 cursor-default'
                 : installState === 'error' || installState === 'verify-failed'
-                  ? 'bg-accent-red hover:bg-accent-red/80 text-white'
+                  ? 'bg-accent-red/20 hover:bg-accent-red/30 text-accent-red border border-accent-red/50'
                   : installState === 'restarting'
                     ? 'bg-yellow-500/20 text-yellow-600 cursor-default'
-                    : 'bg-primary hover:bg-primary/80 text-white'
+                    : 'bg-primary/20 hover:bg-primary/30 text-primary border border-primary/50'
             "
           >
             <span
@@ -988,7 +989,7 @@ function reloadPage() {
             <span v-else>{{ installButtonLabel }}</span>
           </button>
           <button
-            v-if="installState !== 'installing' && installState !== 'restarting'"
+            v-if="installState !== 'installing' && installState !== 'restarting' && installState !== 'verified'"
             @click="emit('close')"
             class="px-6 py-3 rounded-xl border border-stroke-subtle dark:border-stroke/20 text-content-secondary hover:text-content-primary hover:bg-background-mute transition-colors text-sm"
           >

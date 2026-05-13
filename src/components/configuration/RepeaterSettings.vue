@@ -5,6 +5,8 @@ import type { SystemStats } from '@/types/api';
 import apiClient from '@/utils/api';
 import { ApiService } from '@/utils/api';
 import LocationPicker from '@/components/modals/LocationPicker.vue';
+import UnsavedChangesModal from '@/components/ui/UnsavedChangesModal.vue';
+import { useUnsavedChanges } from '@/composables/useUnsavedChanges';
 
 const systemStore = useSystemStore();
 
@@ -262,9 +264,26 @@ const applyGeneratedKey = async () => {
     keygenApplying.value = false;
   }
 };
+
+const { showUnsavedModal, requestLeave, handleDiscard, handleSave } = useUnsavedChanges(
+  isEditing,
+  isSaving,
+  cancelEditing,
+  async () => { await saveChanges(); return !isEditing.value; },
+);
+
+defineExpose({ requestLeave, isEditing });
 </script>
 
 <template>
+  <UnsavedChangesModal
+    :show="showUnsavedModal"
+    :is-saving="isSaving"
+    label="Repeater Settings"
+    @discard="handleDiscard"
+    @save="handleSave"
+  />
+
   <div class="space-y-12">
     <!-- Page Heading -->
     <div class="cfg-page-heading flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
@@ -447,7 +466,7 @@ const applyGeneratedKey = async () => {
         <button
           v-if="isEditing"
           @click="openMapPicker"
-          class="px-4 py-2 bg-primary/20 hover:bg-primary/30 text-content-primary dark:text-content-primary rounded-lg border border-primary/50 transition-colors text-sm flex items-center gap-2"
+          class="btn-primary flex items-center gap-2"
           title="Pick location on map"
         >
           <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -681,7 +700,7 @@ const applyGeneratedKey = async () => {
               v-if="!keygenResult"
               @click="generateKey"
               :disabled="!isValidPrefix || keygenGenerating"
-              class="px-4 py-2 bg-primary/20 hover:bg-primary/30 text-content-primary dark:text-content-primary rounded-lg border border-primary/50 text-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              class="btn-primary"
             >
               {{ keygenGenerating ? 'Generating...' : 'Generate' }}
             </button>
@@ -691,7 +710,7 @@ const applyGeneratedKey = async () => {
                   keygenResult = null;
                   keygenError = null;
                 "
-                class="px-4 py-2 bg-primary/20 hover:bg-primary/30 text-content-primary dark:text-content-primary rounded-lg border border-primary/50 text-sm transition-colors"
+                class="btn-primary"
               >
                 Try Again
               </button>

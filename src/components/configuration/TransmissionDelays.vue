@@ -2,6 +2,8 @@
 import { computed, ref } from 'vue';
 import { useSystemStore } from '@/stores/system';
 import { authClient } from '@/utils/api';
+import UnsavedChangesModal from '@/components/ui/UnsavedChangesModal.vue';
+import { useUnsavedChanges } from '@/composables/useUnsavedChanges';
 
 const systemStore = useSystemStore();
 
@@ -91,9 +93,26 @@ const saveChanges = async () => {
     isSaving.value = false;
   }
 };
+
+const { showUnsavedModal, requestLeave, handleDiscard, handleSave } = useUnsavedChanges(
+  isEditing,
+  isSaving,
+  cancelEditing,
+  async () => { await saveChanges(); return !isEditing.value; },
+);
+
+defineExpose({ requestLeave, isEditing });
 </script>
 
 <template>
+  <UnsavedChangesModal
+    :show="showUnsavedModal"
+    :is-saving="isSaving"
+    label="TX Delay settings"
+    @discard="handleDiscard"
+    @save="handleSave"
+  />
+
   <div class="space-y-12">
     <!-- Page Heading -->
     <div class="cfg-page-heading flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">

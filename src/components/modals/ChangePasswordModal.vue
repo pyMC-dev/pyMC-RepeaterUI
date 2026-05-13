@@ -90,9 +90,9 @@
           <button
             type="submit"
             :disabled="loading"
-            class="px-4 py-2 bg-primary/20 hover:bg-primary/30 text-white rounded-lg border border-primary/50 transition-colors disabled:opacity-50 flex items-center gap-2"
+            class="btn-primary flex items-center gap-2"
           >
-            <Spinner v-if="loading" size="sm" color="white" />
+            <Spinner v-if="loading" size="sm" color="current" />
             {{ loading ? 'Changing...' : 'Change Password' }}
           </button>
         </div>

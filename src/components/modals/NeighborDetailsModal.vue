@@ -262,6 +262,11 @@ const signalQuality = computed(() => {
   if (!props.neighbor) return null;
   return getSignalQuality(props.neighbor.rssi);
 });
+
+// Signal bar height lookup — i is 1-based (v-for="i in 5")
+// Heights: 6, 8, 10, 12, 14 px  →  h-1.5 h-2 h-2.5 h-3 h-3.5
+// Safelist: h-1.5 h-2 h-2.5 h-3 h-3.5
+const BAR_HEIGHTS_SM = ['h-1.5', 'h-2', 'h-2.5', 'h-3', 'h-3.5'] as const;
 </script>
 
 <template>
@@ -421,11 +426,11 @@ const signalQuality = computed(() => {
                           <div
                             :class="[
                               'w-1 transition-colors',
+                              BAR_HEIGHTS_SM[i - 1],
                               i <= signalQuality.bars
                                 ? signalQuality.color
                                 : 'text-gray-600 dark:text-gray-700',
                             ]"
-                            :style="{ height: `${4 + i * 2}px` }"
                           >
                             <div class="w-full h-full bg-current rounded-sm"></div>
                           </div>
@@ -517,7 +522,7 @@ const signalQuality = computed(() => {
                     <button
                       v-else
                       @click="copyCoordinates"
-                      class="w-full px-3 py-1.5 bg-primary hover:bg-primary/90 dark:bg-gray-700 dark:hover:bg-gray-600 text-white text-sm font-medium rounded-lg transition-colors flex items-center justify-center gap-1.5"
+                      class="w-full px-3 py-1.5 rounded-lg text-sm font-medium transition-colors flex items-center justify-center gap-1.5 bg-primary/20 hover:bg-primary/30 border border-primary/50 text-primary"
                     >
                       <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path
@@ -544,7 +549,7 @@ const signalQuality = computed(() => {
             <div class="p-8 pt-4 border-t border-stroke-subtle dark:border-white/10 flex-shrink-0">
               <button
                 @click="emit('close')"
-                class="w-full px-4 py-2.5 bg-primary hover:bg-primary/90 dark:bg-gray-700 dark:hover:bg-gray-600 text-white font-medium rounded-lg transition-colors"
+                class="w-full px-4 py-2.5 rounded-lg font-medium transition-colors bg-primary/20 hover:bg-primary/30 border border-primary/50 text-primary"
               >
                 Close
               </button>

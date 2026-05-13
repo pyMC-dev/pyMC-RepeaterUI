@@ -141,7 +141,7 @@ const handleClose = () => {
 
         <button
           @click="handleDelete"
-          class="flex-1 px-4 py-3 bg-accent-red/20 hover:bg-accent-red/30 border border-accent-red/50 text-accent-red rounded-lg transition-colors font-medium"
+          class="modal-btn-danger"
         >
           Delete
         </button>

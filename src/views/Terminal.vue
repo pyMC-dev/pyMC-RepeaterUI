@@ -936,7 +936,7 @@ const handleMobileBackspace = () => {
           </button>
           <!-- <button
             @click="handleClear"
-            class="flex items-center gap-2 px-4 py-2 bg-accent-red/20 hover:bg-accent-red/30 text-accent-red border border-accent-red/50 rounded-lg transition-colors"
+            class="btn-danger flex items-center gap-2"
           >
             Clear
           </button> -->

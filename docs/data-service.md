@@ -20,6 +20,18 @@ DataService consolidates all of this into one place.
 
 ---
 
+## WebSocket-first delivery with HTTP polling fallback
+
+Live data is delivered via two paths:
+
+1. **WebSocket push (primary).** The WebSocket store receives real-time messages from the backend. `stats` updates, packet events, and noise floor readings arrive this way on an active connection. The WS message handler updates the relevant Pinia stores directly, which triggers reactive re-renders in all consuming components.
+
+2. **HTTP polling (fallback and supplement).** DataService runs timed polling for each `DataKey` via `_startPolling()`. Each poll calls `ensure(key)`, which checks the TTL and skips the HTTP request if a WS push arrived within the TTL window. On a healthy connection the polls rarely hit the network for `stats` — the WS pushes keep the cache fresh. Polling exists so that if the WS drops silently (network partition, idle timeout), the UI continues to receive updated data via HTTP without the user noticing.
+
+**Practical implication:** the Configuration page reads `systemStore.stats`, which is updated by both WS pushes and HTTP polling. Do not check `dataService._lastFetch` on that page to determine data freshness — use `systemStore.stats !== null` instead, because WS pushes do not update `_lastFetch`.
+
+---
+
 ## Bootstrap sequence
 
 `useConnectionLifecycle.ts` calls `await dataService.bootstrap()` **before** opening the WebSocket connection. The HTTP phases complete in full before the WS handshake begins — this prevents the initial HTTP burst and WS from competing on marginal links.
@@ -88,6 +100,38 @@ Called automatically by the WebSocket store when the connection re-opens after a
 
 - **Idle timeout instead of total timeout.** The axios instance default of 10 s is overridden with `timeout: 0`. An `AbortController` fires after **15 s of silence** on the wire. If data is flowing (even slowly), the timer resets on each `onDownloadProgress` chunk — so slow transfers on high-latency links are not abandoned mid-stream.
 - **Sub-status reporting.** `dataService.statsSubStatus` transitions `'requesting' → 'reading' → null` as the first byte arrives. `BootstrapModal` displays this as "(Requesting)" / "(Receiving data)" next to the System Configuration step.
+
+---
+
+## DataService-managed vs per-page endpoints
+
+Not all HTTP calls go through DataService. The distinction is:
+
+**DataService manages** all endpoints that multiple pages or components might need simultaneously, or that benefit from TTL caching and polling:
+
+| Endpoint | DataKey |
+|---|---|
+| `/stats` | `stats` |
+| `/packet_stats` | `packetStats` |
+| `/noise_floor_history` | `noiseFloor` |
+| `/recent_packets` | `recentPackets` |
+| `/sparkline_history` | `sparklines` |
+| `/advert_rate_limit_stats` | `advertTier` |
+| `/adverts` (5 contact types) | `neighbors` |
+
+**Pages fetch directly** (via `ApiService` or their store's fetch method) when the data is specific to that page, needs custom parameters, or must bypass the cache:
+
+| Endpoint / action | Who calls it | Reason for direct fetch |
+|---|---|---|
+| `/identities` | `RoomServers.vue`, `Companions.vue` | Page-specific list, no shared consumer |
+| `/transport_keys` | Configuration transport-keys tab | Page-specific |
+| `/logs` | Logs page | Streamed, no TTL caching makes sense |
+| `/gps` | GPS Diagnostics | Polled by the page itself while open |
+| `/room_messages` | Room Messages dialog | Paginated, query-specific |
+| `/update/status`, `/update/install`, etc. | `UpdateModal.vue` | Install flow with SSE progress stream |
+| `/restart_service` | `RestartModal.vue` | One-shot action, not cacheable |
+| `systemStore.fetchStats()` (direct) | Configuration page after save | Intentional cache-bust after a write |
+| `packetStore.fetchPacketStats({ hours: 48 })` | Statistics page | Custom time range not covered by 24 h cache |
 
 ---
 

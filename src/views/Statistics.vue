@@ -1178,7 +1178,7 @@ useManagedPolling(fetchAllData, {
             v-for="option in timeOptions"
             :key="option.value"
             :value="option.value"
-            class="bg-white dark:bg-gray-800 text-content-primary dark:text-content-primary"
+            class="bg-surface text-content-primary"
           >
             {{ option.label }}
           </option>
@@ -1400,7 +1400,7 @@ useManagedPolling(fetchAllData, {
       <p class="text-content-secondary dark:text-content-muted text-sm">{{ error }}</p>
       <button
         @click="fetchAllData"
-        class="mt-4 px-4 py-2 bg-primary hover:bg-primary/90 dark:bg-primary dark:hover:bg-primary/80 text-white font-medium rounded-lg border border-primary/20 dark:border-primary/30 transition-colors shadow-sm"
+        class="btn-primary mt-4 shadow-sm"
       >
         Retry
       </button>

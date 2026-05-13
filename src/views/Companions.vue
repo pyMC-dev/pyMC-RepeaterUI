@@ -384,7 +384,7 @@ function onImportDone(imported: number) {
           <div class="text-content-secondary dark:text-content-muted text-sm mb-4">{{ error }}</div>
           <button
             @click="fetchIdentities"
-            class="px-4 py-2 bg-primary/20 hover:bg-primary/30 text-content-primary dark:text-content-primary rounded-lg border border-primary/50 transition-colors"
+            class="btn-primary"
           >
             Retry
           </button>
@@ -486,19 +486,19 @@ function onImportDone(imported: number) {
             <div class="ml-4 flex flex-wrap gap-2">
               <button
                 @click="openImportModal(identity.name)"
-                class="px-3 py-1 bg-primary/20 hover:bg-primary/30 text-primary rounded text-xs transition-colors"
+                class="btn-primary-xs"
               >
                 Import contacts
               </button>
               <button
                 @click="openEditModal(identity)"
-                class="px-3 py-1 bg-primary/20 hover:bg-primary/30 text-primary rounded text-xs transition-colors"
+                class="btn-primary-xs"
               >
                 Edit
               </button>
               <button
                 @click="promptDeleteIdentity(identity.name)"
-                class="px-3 py-1 bg-accent-red/20 hover:bg-accent-red/30 text-accent-red rounded text-xs transition-colors"
+                class="btn-danger-xs"
               >
                 Delete
               </button>
@@ -528,7 +528,7 @@ function onImportDone(imported: number) {
         </p>
         <button
           @click="openCreateModal"
-          class="px-4 py-2 bg-primary/20 hover:bg-primary/30 text-primary rounded-lg border border-primary/50 transition-colors"
+          class="btn-primary"
         >
           + Add Companion
         </button>
@@ -637,7 +637,7 @@ function onImportDone(imported: number) {
           </button>
           <button
             @click="createIdentity"
-            class="px-4 py-2 bg-primary/20 hover:bg-primary/30 text-primary rounded-lg border border-primary/50 transition-colors"
+            class="btn-primary"
           >
             Create
           </button>
@@ -739,7 +739,7 @@ function onImportDone(imported: number) {
           </button>
           <button
             @click="updateIdentity"
-            class="px-4 py-2 bg-primary/20 hover:bg-primary/30 text-primary rounded-lg border border-primary/50 transition-colors"
+            class="btn-primary"
           >
             Update
           </button>

@@ -690,7 +690,7 @@ const stepTitles = [
           </p>
           <button
             @click="closeDialog"
-            class="w-full px-6 py-3 rounded-lg font-medium transition-all bg-accent-red hover:bg-accent-red/90 text-white"
+            class="w-full px-6 py-3 rounded-lg font-medium transition-colors bg-accent-red/20 hover:bg-accent-red/30 border border-accent-red/50 text-accent-red"
           >
             Close
           </button>

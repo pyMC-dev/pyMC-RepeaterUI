@@ -333,7 +333,7 @@ onMounted(() => {
             <button
               @click="createToken"
               :disabled="isLoading || !newTokenName.trim()"
-              class="px-4 py-2 bg-primary/20 hover:bg-primary/30 text-content-primary dark:text-content-primary rounded-lg border border-primary/50 transition-colors disabled:opacity-50"
+              class="btn-primary"
             >
               {{ isLoading ? 'Creating...' : 'Create Token' }}
             </button>
@@ -391,7 +391,7 @@ onMounted(() => {
               />
               <button
                 @click="copyToken"
-                class="px-4 py-2 bg-primary/20 hover:bg-primary/30 text-content-primary dark:text-content-primary rounded-lg border border-primary/50 transition-colors flex items-center gap-2"
+                class="btn-primary flex items-center gap-2"
                 title="Copy to clipboard"
               >
                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -419,7 +419,7 @@ onMounted(() => {
           <div class="flex justify-end mt-6">
             <button
               @click="closeTokenModal"
-              class="px-4 py-2 bg-primary/20 hover:bg-primary/30 text-content-primary dark:text-content-primary rounded-lg border border-primary/50 transition-colors"
+              class="btn-primary"
             >
               Done
             </button>

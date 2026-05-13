@@ -584,7 +584,7 @@ const toggleMobileSidebar = () => {
                     showUpdateModal = true;
                     showNotifications = false;
                   "
-                  class="text-xs bg-accent-red hover:bg-accent-red/80 text-white px-3 py-1.5 rounded-lg font-medium transition-colors"
+                  class="text-xs px-3 py-1.5 rounded-lg font-medium transition-colors bg-accent-red/20 hover:bg-accent-red/30 border border-accent-red/50 text-accent-red"
                 >
                   Install Update
                 </button>
@@ -821,7 +821,7 @@ const toggleMobileSidebar = () => {
         <div v-if="restartFailed" class="mt-4 flex items-center justify-center gap-3">
           <button
             @click="reloadPage"
-            class="text-sm bg-primary hover:bg-primary/80 text-white px-4 py-2 rounded-lg transition-colors"
+            class="btn-primary"
           >
             Reload Page
           </button>

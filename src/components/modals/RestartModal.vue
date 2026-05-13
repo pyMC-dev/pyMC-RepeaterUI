@@ -109,7 +109,7 @@ onBeforeUnmount(() => {
         class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm"
         @click.self="close"
       >
-        <div class="bg-white dark:bg-[var(--color-surface-elevated)] rounded-xl shadow-xl border border-stroke-subtle dark:border-stroke/20 p-6 max-w-md w-full mx-4">
+        <div class="modal-card max-w-md shadow-xl">
 
           <!-- Restarting state: spinner -->
           <div v-if="isRestarting" class="flex flex-col items-center gap-5 py-2">
@@ -142,13 +142,8 @@ onBeforeUnmount(() => {
                 </p>
               </div>
             </div>
-            <div class="flex justify-end">
-              <button
-                @click="close"
-                class="px-3 sm:px-4 py-2 bg-background-mute dark:bg-white/5 hover:bg-stroke-subtle dark:hover:bg-white/10 text-content-primary dark:text-content-primary rounded-lg border border-stroke-subtle dark:border-stroke/20 transition-colors text-sm"
-              >
-                Dismiss
-              </button>
+            <div class="modal-actions">
+              <button @click="close" class="modal-btn-cancel">Dismiss</button>
             </div>
           </template>
 
@@ -170,19 +165,9 @@ onBeforeUnmount(() => {
                 </p>
               </div>
             </div>
-            <div class="flex justify-end gap-2">
-              <button
-                @click="close"
-                class="px-3 sm:px-4 py-2 bg-background-mute dark:bg-white/5 hover:bg-stroke-subtle dark:hover:bg-white/10 text-content-primary dark:text-content-primary rounded-lg border border-stroke-subtle dark:border-stroke/20 transition-colors text-sm"
-              >
-                Cancel
-              </button>
-              <button
-                @click="handleRestart"
-                class="px-3 sm:px-4 py-2 bg-primary/20 hover:bg-primary/30 text-content-primary dark:text-content-primary rounded-lg border border-primary/50 transition-colors text-sm"
-              >
-                Restart
-              </button>
+            <div class="modal-actions">
+              <button @click="close" class="modal-btn-cancel">Cancel</button>
+              <button @click="handleRestart" class="modal-btn-primary">Restart</button>
             </div>
           </template>
 

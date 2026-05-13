@@ -4,11 +4,13 @@ import TreeNode from '@/components/ui/TreeNode.vue';
 import AddKeyModal from '@/components/modals/AddKeyModal.vue';
 import EditKeyModal from '@/components/modals/EditKeyModal.vue';
 import DeleteConfirmModal from '@/components/modals/DeleteConfirmModal.vue';
+import UnsavedChangesModal from '@/components/ui/UnsavedChangesModal.vue';
 import { useTreeStateStore } from '@/stores/treeState';
 import { useSystemStore } from '@/stores/system';
 import ApiService from '@/utils/api';
 import type { TreeNodeData } from '@/types/tree';
 import Spinner from '@/components/ui/Spinner.vue';
+import { useUnsavedChanges } from '@/composables/useUnsavedChanges';
 
 defineOptions({ name: 'TransportKeys' });
 
@@ -292,9 +294,26 @@ function handleMoveChildren(data: { nodeId: number; targetParentId: number }) {
 function handleUnscopedFloodPolicyChange(policy: 'allow' | 'deny') {
   unscopedFloodPolicy.value = policy;
 }
+
+const { showUnsavedModal, requestLeave, handleDiscard, handleSave } = useUnsavedChanges(
+  isEditing,
+  isSaving,
+  cancelEditing,
+  async () => { await saveChanges(); return !isEditing.value; },
+);
+
+defineExpose({ requestLeave, isEditing });
 </script>
 
 <template>
+  <UnsavedChangesModal
+    :show="showUnsavedModal"
+    :is-saving="isSaving"
+    label="Region Configuration"
+    @discard="handleDiscard"
+    @save="handleSave"
+  />
+
   <div class="space-y-12">
     <!-- Header -->
     <div class="cfg-page-heading flex flex-col sm:flex-row sm:justify-between sm:items-start gap-3">
@@ -397,7 +416,7 @@ function handleUnscopedFloodPolicyChange(policy: 'allow' | 'deny') {
       <div v-else-if="error" class="text-center py-8">
         <div class="text-accent-red mb-2">⚠️ Error loading regions</div>
         <div class="text-content-secondary dark:text-content-muted text-sm">{{ error }}</div>
-        <button @click="loadTransportKeys" class="mt-4 px-4 py-2 bg-accent-green/20 hover:bg-accent-green/30 text-accent-green border border-accent-green/50 rounded-lg transition-colors">
+        <button @click="loadTransportKeys" class="btn-success mt-4">
           Retry
         </button>
       </div>

@@ -332,7 +332,7 @@ function handleKeydown(e: KeyboardEvent) {
         <button
           type="button"
           :disabled="loading"
-          class="px-4 py-2 bg-primary/20 hover:bg-primary/30 text-primary rounded-lg border border-primary/50 transition-colors disabled:opacity-50"
+          class="btn-primary"
           @click="submit"
         >
           {{ loading ? 'Importing…' : 'Import' }}

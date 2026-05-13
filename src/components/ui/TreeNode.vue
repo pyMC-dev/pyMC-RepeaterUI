@@ -240,7 +240,7 @@ function copyToClipboard(event: Event) {
               <div class="flex justify-end">
                 <button
                   @click="copyToClipboard"
-                  class="px-4 py-2 bg-accent-green/20 hover:bg-accent-green/30 border border-accent-green/50 text-accent-green rounded-lg transition-colors flex items-center gap-2"
+                  class="btn-success flex items-center gap-2"
                   title="Copy to clipboard"
                 >
                   <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">

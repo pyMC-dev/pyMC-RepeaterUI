@@ -256,7 +256,7 @@ onBeforeUnmount(() => {
         <button
           @click="loadLogs"
           :disabled="loading"
-          class="flex items-center gap-2 px-4 py-2 bg-primary/20 hover:bg-primary/30 text-primary border border-primary/50 rounded-lg transition-colors disabled:opacity-50"
+          class="btn-primary flex items-center gap-2"
         >
           <svg
             class="w-4 h-4"
@@ -284,26 +284,26 @@ onBeforeUnmount(() => {
           <span class="text-content-primary dark:text-content-primary font-medium">Filters:</span>
           <button
             @click="selectAllLoggers"
-            class="px-3 py-1 text-xs bg-accent-green/20 hover:bg-accent-green/30 text-accent-green border border-accent-green/50 rounded transition-colors"
+            class="btn-success-xs"
           >
             All Loggers
           </button>
           <button
             @click="clearAllLoggers"
-            class="px-3 py-1 text-xs bg-accent-red/20 hover:bg-accent-red/30 text-accent-red border border-accent-red/50 rounded transition-colors"
+            class="btn-danger-xs"
           >
             Clear Loggers
           </button>
           <div class="w-px h-4 bg-white/20 mx-1"></div>
           <button
             @click="selectAllLevels"
-            class="px-3 py-1 text-xs bg-accent-green/20 hover:bg-accent-green/30 text-accent-green border border-accent-green/50 rounded transition-colors"
+            class="btn-success-xs"
           >
             All Levels
           </button>
           <button
             @click="clearAllLevels"
-            class="px-3 py-1 text-xs bg-accent-red/20 hover:bg-accent-red/30 text-accent-red border border-accent-red/50 rounded transition-colors"
+            class="btn-danger-xs"
           >
             Clear Levels
           </button>

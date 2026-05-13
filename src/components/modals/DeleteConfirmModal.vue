@@ -331,7 +331,7 @@ const handleClose = () => {
         <button
           v-if="childrenToAffect.length > 0 && selectedMoveTarget"
           @click="handleMoveChildren"
-          class="flex-1 px-4 py-3 bg-primary/20 hover:bg-primary/30 border border-primary/50 text-primary rounded-lg transition-colors"
+          class="modal-btn-primary"
         >
           Move & Delete
         </button>
@@ -339,7 +339,7 @@ const handleClose = () => {
         <!-- Delete All Button -->
         <button
           @click="handleDeleteAll"
-          class="flex-1 px-4 py-3 bg-accent-red/20 hover:bg-accent-red/30 border border-accent-red/50 text-accent-red rounded-lg transition-colors font-medium"
+          class="modal-btn-danger"
         >
           {{ childrenToAffect.length > 0 ? 'Delete All' : 'Delete' }}
         </button>

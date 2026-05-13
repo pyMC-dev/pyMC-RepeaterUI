@@ -54,6 +54,56 @@
     @apply px-4 py-2 bg-background-mute dark:bg-white/5 hover:bg-stroke-subtle dark:hover:bg-white/10 text-content-primary dark:text-content-primary rounded-lg border border-stroke-subtle dark:border-stroke/20 transition-colors text-sm disabled:opacity-50 disabled:cursor-not-allowed;
   }
 
+  /* ── General-purpose buttons ────────────────────────────────────────────── */
+  /* Use outside modal/config contexts. No flex-1 — add layout classes inline. */
+  /* Never use bg-primary text-white — primary is light teal in dark mode.     */
+
+  .btn-primary {
+    @apply px-4 py-2 rounded-lg text-sm font-medium transition-colors
+           bg-primary/20 hover:bg-primary/30 border border-primary/50 text-primary
+           disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+
+  .btn-danger {
+    @apply px-4 py-2 rounded-lg text-sm font-medium transition-colors
+           bg-accent-red/20 hover:bg-accent-red/30 border border-accent-red/50 text-accent-red
+           disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+
+  .btn-success {
+    @apply px-4 py-2 rounded-lg text-sm font-medium transition-colors
+           bg-accent-green/20 hover:bg-accent-green/30 border border-accent-green/50 text-accent-green
+           disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+
+  .btn-secondary {
+    @apply px-4 py-2 rounded-lg text-sm transition-colors
+           bg-background-mute dark:bg-white/5 hover:bg-stroke-subtle dark:hover:bg-white/10
+           border border-stroke-subtle dark:border-stroke/20
+           text-content-primary dark:text-content-primary
+           disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+
+  /* Compact / pill variants — for inline row actions and small controls */
+
+  .btn-primary-xs {
+    @apply px-3 py-1 rounded text-xs transition-colors
+           bg-primary/20 hover:bg-primary/30 border border-primary/50 text-primary
+           disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+
+  .btn-danger-xs {
+    @apply px-3 py-1 rounded text-xs transition-colors
+           bg-accent-red/20 hover:bg-accent-red/30 border border-accent-red/50 text-accent-red
+           disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+
+  .btn-success-xs {
+    @apply px-3 py-1 rounded text-xs transition-colors
+           bg-accent-green/20 hover:bg-accent-green/30 border border-accent-green/50 text-accent-green
+           disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+
   /* ── Config form inputs ─────────────────────────────────────────────────── */
 
   .cfg-input {

@@ -1,11 +1,12 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
-import { onBeforeRouteLeave } from 'vue-router';
 import { useSystemStore } from '@/stores/system';
 import { authClient } from '@/utils/api';
 import brokerTemplatesData from '@/assets/broker-templates.json';
 import RestartModal from '@/components/modals/RestartModal.vue';
 import BrokerEditModal from '@/components/modals/BrokerEditModal.vue';
+import UnsavedChangesModal from '@/components/ui/UnsavedChangesModal.vue';
+import { useUnsavedChanges } from '@/composables/useUnsavedChanges';
 
 const systemStore = useSystemStore();
 const mqttConfig = computed(() => systemStore.stats?.config?.mqtt_brokers || {});
@@ -44,8 +45,6 @@ const isGlobalEditing = ref(false);
 const isSaving = ref(false);
 const errorMsg = ref('');
 const showRestartModal = ref(false);
-const showUnsavedModal = ref(false);
-const pendingNavFn = ref<(() => void) | null>(null);
 
 interface Snapshot {
   iata: string;
@@ -296,59 +295,31 @@ const draftIsValid = computed(() => {
 
 
 // ── Navigation guard ──────────────────────────────────────────────────────
-onBeforeRouteLeave((to, from, next) => {
-  if (isGlobalEditing.value) {
-    showUnsavedModal.value = true;
-    pendingNavFn.value = () => next();
-  } else {
-    next();
-  }
-});
-
-async function handleSaveOnly() {
+async function saveForNavigation(): Promise<boolean> {
   if (editingBrokerId.value !== null && draftIsValid.value) commitBrokerDraft();
   isSaving.value = true;
+  errorMsg.value = '';
   const result = await callSaveApi();
   isSaving.value = false;
   if (result.success) {
     isGlobalEditing.value = false;
+    isEditingObserver.value = false;
     globalSnapshot.value = null;
-    showUnsavedModal.value = false;
-    if (pendingNavFn.value) { pendingNavFn.value(); pendingNavFn.value = null; }
-  }
-}
-
-async function handleSaveAndApply() {
-  if (editingBrokerId.value !== null && draftIsValid.value) commitBrokerDraft();
-  isSaving.value = true;
-  const result = await callSaveApi();
-  isSaving.value = false;
-  if (result.success) {
-    isGlobalEditing.value = false;
-    globalSnapshot.value = null;
-    showUnsavedModal.value = false;
-    pendingNavFn.value = null;
     showRestartModal.value = true;
+    return true;
   }
+  errorMsg.value = result.error ?? 'Save failed';
+  return false;
 }
 
-function handleDiscardAndNavigate() {
-  cancelGlobalEditing();
-  showUnsavedModal.value = false;
-  if (pendingNavFn.value) { pendingNavFn.value(); pendingNavFn.value = null; }
-}
+const { showUnsavedModal, requestLeave, handleDiscard, handleSave } = useUnsavedChanges(
+  isGlobalEditing,
+  isSaving,
+  cancelGlobalEditing,
+  saveForNavigation,
+);
 
-// ── Exposed API for parent tab container ──────────────────────────────────
-function requestLeave(callback: () => void) {
-  if (isGlobalEditing.value) {
-    showUnsavedModal.value = true;
-    pendingNavFn.value = callback;
-  } else {
-    callback();
-  }
-}
-
-defineExpose({ requestLeave, isGlobalEditing });
+defineExpose({ requestLeave, isEditing: isGlobalEditing });
 
 let _statusTimer: ReturnType<typeof setInterval> | null = null;
 
@@ -379,57 +350,7 @@ onUnmounted(() => {
   />
 
   <!-- ── Unsaved Changes Modal ──────────────────────────────────────────── -->
-  <Teleport to="body">
-    <Transition
-      enter-active-class="transition-opacity duration-200"
-      enter-from-class="opacity-0"
-      leave-active-class="transition-opacity duration-200"
-      leave-to-class="opacity-0"
-    >
-      <div
-        v-if="showUnsavedModal"
-        class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm"
-      >
-        <div class="bg-white dark:bg-[var(--color-surface-elevated)] rounded-xl shadow-xl border border-stroke-subtle dark:border-stroke/20 p-6 max-w-md w-full mx-4">
-          <div class="flex items-start gap-3 mb-4">
-            <div class="flex-shrink-0 w-10 h-10 rounded-full bg-red-100 dark:bg-red-900/30 flex items-center justify-center">
-              <svg class="w-5 h-5 text-red-600 dark:text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
-              </svg>
-            </div>
-            <div>
-              <h3 class="text-base font-semibold text-content-primary dark:text-content-primary">Unsaved Changes</h3>
-              <p class="mt-1 text-sm text-content-secondary dark:text-content-muted">
-                Broker settings have not been saved. What would you like to do?
-              </p>
-            </div>
-          </div>
-          <div class="flex flex-col sm:flex-row gap-2 justify-end">
-            <button
-              @click="handleDiscardAndNavigate"
-              class="px-3 sm:px-4 py-2 bg-background-mute dark:bg-white/5 hover:bg-stroke-subtle dark:hover:bg-white/10 text-content-primary dark:text-content-primary rounded-lg border border-stroke-subtle dark:border-stroke/20 transition-colors text-sm"
-            >
-              Cancel (Discard Changes)
-            </button>
-            <button
-              @click="handleSaveOnly"
-              :disabled="isSaving"
-              class="px-3 sm:px-4 py-2 bg-background-mute dark:bg-white/5 hover:bg-stroke-subtle dark:hover:bg-white/10 text-content-primary dark:text-content-primary rounded-lg border border-stroke-subtle dark:border-stroke/20 transition-colors text-sm disabled:opacity-50"
-            >
-              {{ isSaving ? 'Saving…' : 'Save Settings Only' }}
-            </button>
-            <button
-              @click="handleSaveAndApply"
-              :disabled="isSaving"
-              class="px-3 sm:px-4 py-2 bg-primary/20 hover:bg-primary/30 text-content-primary dark:text-content-primary rounded-lg border border-primary/50 transition-colors text-sm disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {{ isSaving ? 'Saving…' : 'Save & Apply (Restart)' }}
-            </button>
-          </div>
-        </div>
-      </div>
-    </Transition>
-  </Teleport>
+  <UnsavedChangesModal :show="showUnsavedModal" :is-saving="isSaving" label="Broker settings" @discard="handleDiscard" @save="handleSave" />
 
   <!-- ── Main Content ───────────────────────────────────────────────────── -->
   <div class="space-y-12">
@@ -447,7 +368,7 @@ onUnmounted(() => {
         <template v-if="!isGlobalEditing">
           <button
             @click="startGlobalEditing"
-            class="px-3 sm:px-4 py-2 bg-primary/20 hover:bg-primary/30 text-content-primary dark:text-content-primary rounded-lg border border-primary/50 transition-colors text-sm"
+            class="btn-primary"
           >
             Edit Settings
           </button>
@@ -463,7 +384,7 @@ onUnmounted(() => {
           <button
             @click="saveGlobalSettings"
             :disabled="isSaving"
-            class="px-3 sm:px-4 py-2 bg-primary/20 hover:bg-primary/30 text-content-primary dark:text-content-primary rounded-lg border border-primary/50 transition-colors text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+            class="btn-primary"
           >
             {{ isSaving ? 'Saving…' : 'Save Settings' }}
           </button>
@@ -623,7 +544,7 @@ onUnmounted(() => {
           </div>
           <button
             @click="addBroker"
-            class="inline-flex items-center gap-1.5 px-3 sm:px-4 py-2 bg-primary/20 hover:bg-primary/30 text-content-primary dark:text-content-primary rounded-lg border border-primary/50 transition-colors text-sm"
+            class="btn-primary inline-flex items-center gap-1.5"
           >
             <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />

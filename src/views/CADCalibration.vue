@@ -567,7 +567,7 @@ onUnmounted(() => {
         <button
           v-if="showBestResult && bestCalibrationResult"
           @click="saveSettings"
-          class="flex-shrink-0 flex items-center gap-2 px-4 py-2 bg-primary/20 hover:bg-primary/30 text-primary rounded-lg border border-primary/50 transition-colors text-sm font-medium"
+          class="btn-primary flex-shrink-0 flex items-center gap-2"
         >
           <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"></path>

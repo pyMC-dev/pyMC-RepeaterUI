@@ -181,6 +181,13 @@ const getRSSIStrength = (rssi: number | null): { bars: number; color: string } =
   };
 };
 
+// Signal bar height lookups — bar is 1-based (v-for="bar in 5")
+// SM variant: 6, 8, 10, 12, 14 px  →  h-1.5 h-2 h-2.5 h-3 h-3.5
+// MD variant: 8, 10, 12, 14, 16 px  →  h-2 h-2.5 h-3 h-3.5 h-4
+// Safelist: h-1.5 h-2 h-2.5 h-3 h-3.5 h-4
+const BAR_HEIGHTS_SM = ['h-1.5', 'h-2', 'h-2.5', 'h-3', 'h-3.5'] as const;
+const BAR_HEIGHTS_MD = ['h-2', 'h-2.5', 'h-3', 'h-3.5', 'h-4'] as const;
+
 // View mode utility
 const getCellPadding = () => {
   return props.isCompactView ? 'py-2 px-2' : 'py-4 px-3';
@@ -713,11 +720,11 @@ const sortedAdverts = computed(() => {
                     <div
                       :class="[
                         'w-1 transition-colors',
+                        BAR_HEIGHTS_SM[bar - 1],
                         bar <= getRSSIStrength(advert.rssi).bars
                           ? getRSSIStrength(advert.rssi).color
                           : 'text-gray-600',
                       ]"
-                      :style="{ height: `${4 + bar * 2}px` }"
                     >
                       <div class="w-full h-full bg-current rounded-sm"></div>
                     </div>
@@ -860,11 +867,11 @@ const sortedAdverts = computed(() => {
                     <div
                       :class="[
                         'w-1.5 transition-colors',
+                        BAR_HEIGHTS_MD[bar - 1],
                         bar <= getRSSIStrength(advert.rssi).bars
                           ? getRSSIStrength(advert.rssi).color
                           : 'text-gray-600',
                       ]"
-                      :style="{ height: `${6 + bar * 2}px` }"
                     >
                       <div class="w-full h-full bg-current rounded-sm"></div>
                     </div>

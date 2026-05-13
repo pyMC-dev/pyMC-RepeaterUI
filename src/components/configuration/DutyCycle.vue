@@ -2,6 +2,8 @@
 import { computed, ref } from 'vue';
 import { useSystemStore } from '@/stores/system';
 import { authClient } from '@/utils/api';
+import UnsavedChangesModal from '@/components/ui/UnsavedChangesModal.vue';
+import { useUnsavedChanges } from '@/composables/useUnsavedChanges';
 
 const systemStore = useSystemStore();
 
@@ -54,6 +56,15 @@ const cancelEditing = () => {
   errorMessage.value = '';
 };
 
+const { showUnsavedModal, requestLeave, handleDiscard, handleSave } = useUnsavedChanges(
+  isEditing,
+  isSaving,
+  cancelEditing,
+  async () => { await saveChanges(); return !isEditing.value; },
+);
+
+defineExpose({ requestLeave, isEditing });
+
 const saveChanges = async () => {
   isSaving.value = true;
   errorMessage.value = '';
@@ -90,6 +101,14 @@ const saveChanges = async () => {
 </script>
 
 <template>
+  <UnsavedChangesModal
+    :show="showUnsavedModal"
+    :is-saving="isSaving"
+    label="Duty Cycle settings"
+    @discard="handleDiscard"
+    @save="handleSave"
+  />
+
   <div class="space-y-12">
     <!-- Page Heading -->
     <div class="cfg-page-heading flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">

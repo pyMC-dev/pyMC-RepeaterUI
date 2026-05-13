@@ -293,14 +293,15 @@ const repeaterVersion = computed(() => parseVersion(systemStore.version));
 const coreVersion = computed(() => parseVersion(systemStore.coreVersion));
 
 // Computed duty cycle bar width and color
+// Width is genuinely dynamic; colour uses CSS custom properties so it adapts to light/dark mode.
 const dutyCycleBarStyle = computed(() => {
   const percentage = systemStore.dutyCyclePercentage;
-  let backgroundColor = '#A5E5B6'; // accent-green
+  let backgroundColor = 'var(--color-accent-green)';
 
   if (percentage > 90) {
-    backgroundColor = '#FB787B'; // accent-red
+    backgroundColor = 'var(--color-accent-red)';
   } else if (percentage > 70) {
-    backgroundColor = '#FFC246'; // secondary (yellow)
+    backgroundColor = 'var(--color-secondary)';
   }
 
   return {

@@ -2,11 +2,21 @@
 
 ## Background
 
-This work began as a targeted fix for performance issues noticed after the last merge. Investigating those issues exposed a deeper problem: the Statistics page did not have a clear purpose. It was simultaneously attempting to show live real-time data (fed by WebSocket pushes) and historical time-scoped reports, polling every 30 seconds on data with hour-level RRD resolution, and silently failing on its most important fetches due to a global 10-second Axios timeout that was shorter than the queries it was making. Fixing the performance issues required first deciding what the page was actually for.
+This work began as a targeted fix for performance issues noticed after the last merge. What followed was a chain where each fix exposed the next problem — the scope expanded well beyond the original intent.
+
+**The first thread: timeouts.** The Statistics page was silently failing its most important fetches. The global Axios timeout is 10 seconds. RRD queries for 7-day ranges take ~10.5 seconds on a bandwidth-constrained mesh site; 2-day ranges take ~15 seconds. Every long-range Statistics fetch was timing out, the spinner was clearing (an unrelated faster fetch was completing first), and stale data from the previous time range was left on screen with no indication anything had gone wrong. The fix — a two-phase streaming fetch wrapper — was straightforward, but reaching for it required understanding what data the page was actually fetching and why.
+
+**The second thread: page identity.** Investigating the timeouts made it clear the Statistics page did not have a coherent purpose. It was simultaneously attempting to show live real-time data (fed by WebSocket pushes) and historical time-scoped reports, polling every 30 seconds on data with one-hour RRD resolution. Once the `topStats` computed was traced, a pre-existing bug surfaced: it read directly from `packetStore.packetStats`, which the WebSocket handler also writes on every push. Changing the time range from 7 days to 2 days would fetch the correct scoped result, but the next WebSocket message would silently overwrite it with the current live counter. The page was inadvertently live. Fixing this required a clear decision about what Statistics is for.
 
 **Decision: Dashboard = real-time. Statistics = historical reporting.**
 
 The Dashboard and its StatsCards row show live counters updated by the WebSocket. Statistics is now a pure historical reporting page: data loads once on mount and again when the user changes the time range. Nothing on Statistics updates between those two events.
+
+**The third thread: duplicate HTTP calls.** While auditing which fetches were being made and where, it became apparent that several terminal commands, standalone chart components, and config pages were each calling `ApiService.get('/stats')` directly on every mount — ignoring that DataService already fetches, caches, and polls that endpoint. Each of those mounts was issuing a redundant HTTP request to the device. Similarly, `AirtimeUtilizationChart` was polling at twice its data resolution and re-fetching on every navigation without any cache check.
+
+**The fourth thread: style violations.** A final pass over every touched file turned up a consistent pattern of raw Tailwind palette literals, hardcoded RGBA colour values in CSS, and inline `animate-spin` elements scattered across components that were otherwise well-structured. None of these were introduced by this branch, but they were in files we were already editing, so they were corrected in place.
+
+The result is a branch that fixes the original performance problems but also resolves a set of correctness, identity, and style issues that were quietly present in the codebase.
 
 ---
 

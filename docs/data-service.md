@@ -94,6 +94,19 @@ Called automatically by the WebSocket store when the connection re-opens after a
 
 ---
 
+## Streaming timeout — `streamingFetch.ts`
+
+The global Axios timeout on `apiClient` is 10 seconds. Several backend queries (RRD history endpoints, hardware stats) regularly take longer than this on real hardware — a 7-day `/packet_stats` query takes ~10.5 s; a 2-day query ~15 s. Using `ApiService.get` for these endpoints causes silent timeouts: the error is caught and swallowed, the spinner is cleared by an unrelated faster fetch, and stale cached values from the previous state are left on screen.
+
+`src/utils/streamingFetch.ts` wraps `ApiService.get` with a two-phase `AbortController`:
+
+1. **Connect phase** — if no bytes arrive within `connectTimeoutMs` (default 15 s), abort.
+2. **Stream phase** — once bytes start flowing, arm a rolling idle timer that resets on every `onDownloadProgress` chunk. Only fires if data stops for `idleTimeoutMs` (default 5 s).
+
+This means an actively-streaming response is never aborted regardless of total duration. Use `streamingGet` (not `ApiService.get`) for any endpoint that may take more than a few seconds on a marginal link — in practice, all per-page chart and history fetches.
+
+---
+
 ## `/stats` special handling
 
 `/stats` is the most expensive endpoint — it aggregates hardware state (SPI bus reads), config file parsing, and duty-cycle calculations on the embedded backend. It gets special treatment:
@@ -131,7 +144,8 @@ Not all HTTP calls go through DataService. The distinction is:
 | `/update/status`, `/update/install`, etc. | `UpdateModal.vue` | Install flow with SSE progress stream |
 | `/restart_service` | `RestartModal.vue` | One-shot action, not cacheable |
 | `systemStore.fetchStats()` (direct) | Configuration page after save | Intentional cache-bust after a write |
-| `packetStore.fetchPacketStats({ hours: 48 })` | Statistics page | Custom time range not covered by 24 h cache |
+| `streamingGet('/packet_stats', { hours })` | Statistics page | Custom time range not covered by the 24 h cache. **Not routed through the store** — `packetStore.packetStats` is also written by the WebSocket push handler, so using it as the delivery mechanism would allow WebSocket events to overwrite time-scoped results between user interactions. The Statistics page stores the result in a local `ref` snapshot instead. |
+| `streamingGet('/metrics_graph_data')`, `/route_stats`, `/noise_floor_history`, `/crc_error_history` | Statistics page | Time-scoped historical queries parameterised by the page's time-range picker. No shared consumer; TTL caching would require keying by range parameter. |
 
 ---
 

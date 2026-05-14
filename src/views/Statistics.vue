@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { ref, reactive, onMounted, onBeforeUnmount, computed, nextTick, toRaw, markRaw } from 'vue';
 import { usePacketStore } from '@/stores/packets';
-import { useWebSocketStore } from '@/stores/websocket';
 import { streamingGet } from '@/utils/streamingFetch';
 import SparklineChart from '@/components/ui/Sparkline.vue';
 import ChartCard from '@/components/ui/ChartCard.vue';
@@ -26,7 +25,7 @@ import {
 } from 'chart.js';
 import 'chartjs-adapter-date-fns';
 
-import { useManagedPolling } from '@/composables/useManagedPolling';
+
 
 defineOptions({ name: 'StatisticsView' });
 
@@ -93,7 +92,6 @@ interface SignalMetrics {
 }
 
 const packetStore = usePacketStore();
-const websocketStore = useWebSocketStore();
 
 // Returns Chart.js time-axis unit and display format appropriate for the selected range.
 // ≤ 24 h → hour ticks with HH:mm; 24–48 h → include day name; > 48 h → day ticks with date.
@@ -174,7 +172,8 @@ const chartLoadingStates = ref({
   packetRate: true,
   noiseFloor: false,
   routePie: true,
-  sparklines: true,
+  sparklineMetrics: true,
+  sparklineCrc: true,
 });
 
 // Chart error states (null = no error, string = error message shown in ChartCard overlay)
@@ -191,16 +190,13 @@ const signalMetricsChart = ref<ChartJS | null>(null);
 const packetRateCanvasRef = ref<HTMLCanvasElement | null>(null);
 const signalMetricsCanvasRef = ref<HTMLCanvasElement | null>(null);
 
-// Top stats computed — reads from the store after fetchPacketStats updates it with the
-// time-scoped result for the selected hours window.
-const topStats = computed(() => {
-  const stats = packetStore.packetStats;
-  if (!stats) return { totalRx: 0, totalTx: 0 };
-  return {
-    totalRx: stats.total_packets || 0,
-    totalTx: stats.transmitted_packets || 0,
-  };
-});
+// This is a historical reporting page — data loads on mount and on explicit time-range
+// changes only. Prior to this revision the page polled every 30s and read reactive store
+// refs, but the data resolution meant those updates carried no meaningful change; all
+// live packet data is on the Dashboard. topStats is a local snapshot rather than a
+// computed on packetStore.packetStats so that WebSocket pushes cannot overwrite the
+// time-scoped result between user interactions.
+const topStats = ref({ totalRx: 0, totalTx: 0 });
 
 // Aggregate data into buckets - ~72 buckets regardless of time range
 const aggregateToBuckets = (data: Array<[number, number]>, hours: number) => {
@@ -277,8 +273,14 @@ const fetchAllData = async () => {
     isLoading.value = true;
     error.value = null;
 
-    // Fetch time-scoped packet totals first — updates packetStore.packetStats reactively
-    await packetStore.fetchPacketStats({ hours: selectedHours.value });
+    const statsResponse = await streamingGet<{ total_packets?: number; transmitted_packets?: number }>(
+      '/packet_stats',
+      { hours: selectedHours.value },
+    );
+    topStats.value = {
+      totalRx: statsResponse.data?.total_packets || 0,
+      totalTx: statsResponse.data?.transmitted_packets || 0,
+    };
 
     isLoading.value = false;
   } catch (err) {
@@ -297,7 +299,8 @@ const loadChartData = async () => {
     packetRate: true,
     noiseFloor: true,
     routePie: true,
-    sparklines: true,
+    sparklineMetrics: true,
+    sparklineCrc: true,
   };
 
   // Pre-populate from store caches so the chart render after Promise.allSettled
@@ -351,7 +354,7 @@ const loadMetricsData = async () => {
     metricsData.value = null;
   } finally {
     chartLoadingStates.value.packetRate = false;
-    chartLoadingStates.value.sparklines = false;
+    chartLoadingStates.value.sparklineMetrics = false;
     if (!packetRateChartError.value) {
       await nextTick();
       createOrUpdatePacketRateChart();
@@ -443,7 +446,7 @@ const loadCrcErrorData = async () => {
     crcErrorData.value = [];
     crcDataError.value = err instanceof Error ? err.message : 'Failed to load';
   } finally {
-    chartLoadingStates.value.sparklines = false;
+    chartLoadingStates.value.sparklineCrc = false;
   }
 };
 
@@ -454,7 +457,8 @@ const onTimeRangeChange = () => {
     packetRate: true,
     noiseFloor: true,
     routePie: true,
-    sparklines: true,
+    sparklineMetrics: true,
+    sparklineCrc: true,
   };
   // Destroy existing charts first to prevent memory leaks
   destroyAllCharts();
@@ -925,11 +929,7 @@ onBeforeUnmount(() => {
   window.removeEventListener('resize', () => {});
 });
 
-useManagedPolling(fetchAllData, {
-  intervalMs: 30000,
-  enabled: () => !websocketStore.isConnected,
-  immediate: false,
-});
+
 </script>
 
 <template>
@@ -970,10 +970,10 @@ useManagedPolling(fetchAllData, {
         :value="topStats.totalRx"
         :color="CHART_COLORS.totalRx"
         :data="sparklineData.totalPackets"
-        :loading="chartLoadingStates.sparklines"
+        :loading="chartLoadingStates.sparklineMetrics"
         :error="packetRateChartError"
         variant="classic"
-        @retry="() => { chartLoadingStates.sparklines = true; chartLoadingStates.packetRate = true; packetRateChartError = null; void loadMetricsData(); }"
+        @retry="() => { chartLoadingStates.sparklineMetrics = true; chartLoadingStates.packetRate = true; packetRateChartError = null; void loadMetricsData(); }"
       />
 
       <!-- Total TX -->
@@ -982,10 +982,10 @@ useManagedPolling(fetchAllData, {
         :value="topStats.totalTx"
         :color="CHART_COLORS.totalTx"
         :data="sparklineData.transmittedPackets"
-        :loading="chartLoadingStates.sparklines"
+        :loading="chartLoadingStates.sparklineMetrics"
         :error="packetRateChartError"
         variant="classic"
-        @retry="() => { chartLoadingStates.sparklines = true; chartLoadingStates.packetRate = true; packetRateChartError = null; void loadMetricsData(); }"
+        @retry="() => { chartLoadingStates.sparklineMetrics = true; chartLoadingStates.packetRate = true; packetRateChartError = null; void loadMetricsData(); }"
       />
 
       <!-- CRC Errors -->
@@ -994,10 +994,10 @@ useManagedPolling(fetchAllData, {
         :value="crcErrorData.reduce((sum, d) => sum + d.count, 0)"
         :color="CHART_COLORS.crcErrors"
         :data="sparklineData.crcErrors"
-        :loading="chartLoadingStates.sparklines"
+        :loading="chartLoadingStates.sparklineCrc"
         :error="crcDataError"
         variant="classic"
-        @retry="() => { chartLoadingStates.sparklines = true; crcDataError = null; void loadCrcErrorData(); }"
+        @retry="() => { chartLoadingStates.sparklineCrc = true; crcDataError = null; void loadCrcErrorData(); }"
       />
 
     </div>

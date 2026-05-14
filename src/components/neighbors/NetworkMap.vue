@@ -951,7 +951,7 @@ onUnmounted(() => {
   font-size: 12px;
   color: #ffffff;
   backdrop-filter: blur(20px);
-  z-index: 1000;
+  z-index: 200;
   min-width: 150px;
   max-width: 180px;
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);

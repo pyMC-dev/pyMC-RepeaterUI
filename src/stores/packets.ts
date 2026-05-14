@@ -538,6 +538,8 @@ export const usePacketStore = defineStore('packets', () => {
     legacySparklineData,
     noiseFloorSparklineData,
     crcErrorCount,
+    crcErrorHistory,
+    metricsGraphData,
     interpolatedRates,
 
     // Actions

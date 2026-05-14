@@ -45,6 +45,24 @@ Pinia is the Vue team's recommendation, it matches the Composition API mental mo
 
 ---
 
+## Dashboard vs Statistics — live data vs historical reports
+
+**Decision.** The Dashboard is the home for real-time data. The Statistics page is a historical reporting page. These two purposes are mutually exclusive and must not be mixed.
+
+**Dashboard** shows live counters updated by the WebSocket: uptime, RX packet count, forwarded, dropped, CRC errors, and Hash Cache size. All of these are point-in-time values with no meaningful time-range parameter.
+
+**Statistics** shows time-scoped historical charts drawn from the RRD backend: packet rate over time, noise floor, route distribution, CRC error trend. The user selects a time range (1 h – 7 d). Data loads once on mount and again when the range changes. Nothing updates between those two events — the page does not poll and does not respond to WebSocket pushes.
+
+**Why this distinction matters.** Before this was enforced, the Statistics page was attempting to do both. The `topStats` ref (Total RX / Total TX numerical values) was a `computed` reading from `packetStore.packetStats`, which the WebSocket handler also writes on every push. This meant:
+
+- Changing the time range from 7 days to 2 days would trigger a time-scoped fetch, but the next WebSocket push would overwrite the result with the current live counter.
+- The page was polling every 30 seconds via `useManagedPolling` for data with one-hour RRD resolution — meaningless churn.
+- Hash Cache (`duplicate_cache_size`) was displayed on Statistics even though it has no historical dimension and cannot respond to the time-range picker.
+
+**What to put where.** If a metric has a historical series in the RRD database and responds meaningfully to the time-range picker → Statistics. If it is a live operational counter updated by the WebSocket → Dashboard StatsCards.
+
+---
+
 ## Bootstrap modal — why the wait is enforced
 
 `BootstrapModal.vue` blocks navigation until the HTTP bootstrap sequence completes and the WebSocket is open. This is not a cosmetic loading screen — it enforces an ordering that prevents several concrete failure modes.

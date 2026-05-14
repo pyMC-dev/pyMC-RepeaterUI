@@ -448,7 +448,7 @@ const toggleMobileSidebar = () => {
               updateInfo.hasUpdate
                 ? 'bg-accent-red animate-pulse'
                 : updateInfo.isChecking
-                  ? 'bg-yellow-400 animate-pulse'
+                  ? 'bg-secondary animate-pulse'
                   : updateInfo.currentVersion
                     ? 'bg-accent-green'
                     : 'bg-content-muted/50'
@@ -533,10 +533,11 @@ const toggleMobileSidebar = () => {
           </div>
         </div>
 
+        <Teleport to="body">
         <div
           v-if="showNotifications"
           ref="notifRef"
-          class="absolute right-6 top-14 z-[100] w-80 bg-surface dark:bg-surface-elevated border border-stroke-subtle dark:border-stroke/20 rounded-[15px] p-4 shadow-2xl backdrop-blur-sm"
+          class="fixed right-6 top-14 z-[250] w-80 bg-surface dark:bg-surface-elevated border border-stroke-subtle dark:border-stroke/20 rounded-[15px] p-4 shadow-2xl backdrop-blur-sm"
           @click.stop
         >
           <div class="flex items-center justify-between mb-3">
@@ -784,6 +785,7 @@ const toggleMobileSidebar = () => {
             </div>
           </div>
         </div>
+        </Teleport>
       </div>
     </div>
   </div>

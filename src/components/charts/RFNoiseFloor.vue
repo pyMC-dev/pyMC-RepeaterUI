@@ -3,6 +3,19 @@ import { computed, onMounted } from 'vue';
 import { usePacketStore } from '@/stores/packets';
 import { useSystemStore } from '@/stores/system';
 import { useDataService } from '@/stores/dataService';
+import { useTheme } from '@/composables/useTheme';
+import Spinner from '@/components/ui/Spinner.vue';
+
+// Chart palette — fixed vibrant colour, same in both light and dark mode.
+const CHART_COLORS = {
+  noiseFloorDot: 'rgba(245, 158, 11, 0.8)', // amber — scatter dot fill
+} as const;
+
+// Theme-aware chrome colours (grid lines). Re-evaluated when theme changes.
+const { theme } = useTheme();
+const gridLineColor = computed(() =>
+  theme.value === 'dark' ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.1)',
+);
 
 // Props
 interface Props {
@@ -89,19 +102,7 @@ const dataPoints = computed(() => {
     >
       <div class="text-center">
         <div class="flex items-center justify-center gap-2 mb-2">
-          <svg
-            class="w-4 h-4 text-secondary animate-spin"
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-          >
-            <path
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              stroke-width="2"
-              d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"
-            />
-          </svg>
+          <Spinner size="sm" color="current" />
           <span class="text-secondary text-sm font-medium">CAD Calibration</span>
         </div>
         <p class="text-content-muted dark:text-content-muted text-xs">In Progress</p>
@@ -133,7 +134,7 @@ const dataPoints = computed(() => {
         :y1="(i * chartHeight) / 4"
         :x2="chartWidth"
         :y2="(i * chartHeight) / 4"
-        stroke="rgba(255, 255, 255, 0.1)"
+        :stroke="gridLineColor"
         stroke-width="1"
       />
 
@@ -144,7 +145,7 @@ const dataPoints = computed(() => {
         :cx="point.x"
         :cy="point.y"
         r="1.5"
-        fill="rgba(245, 158, 11, 0.8)"
+        :fill="CHART_COLORS.noiseFloorDot"
         class="transition-all duration-300"
       />
     </svg>

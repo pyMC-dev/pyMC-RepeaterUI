@@ -122,9 +122,9 @@ const getThemeColors = () => {
 
 // Physical upper bound for packet rate data from the backend.
 // The API returns rates in packets/second (RRD DERIVE: count / step_s, where step = 60s).
-// Minimum on-air time per MeshCore packet: 100ms → max rate = 1/0.1 = 10 pkts/s.
-// The chart buckets AVERAGE rates, so no bucket can legitimately exceed 10 pkts/s regardless
-// of the selected time window. Guard at 2× to give headroom without accepting corrupt values.
+// ~100ms on-air time is an estimate based on observed averages at the most common MeshCore
+// settings — actual airtime varies with SF/BW/payload. This gives ~10 pkts/s; guard is set
+// at 2× to provide headroom while still rejecting the corrupt RRD spikes (6M–110M pkts/s).
 const PACKET_RATE_GUARD = 20; // pkts/s — hard cap applied before bucketing/sparklines
 
 // Chart palette — fixed vibrant colours, same in both light and dark mode.
@@ -311,11 +311,7 @@ const loadChartData = async () => {
   if (packetStore.crcErrorHistory.length > 0) {
     crcErrorData.value = [...packetStore.crcErrorHistory];
   }
-  // Use WS ring buffer first; fall back to HTTP-polled history from DataService.
-  if (packetStore.noiseFloorTimeSeries.length > 0) {
-    noiseFloorData.value = { chart_data: packetStore.noiseFloorTimeSeries };
-    generateSignalMetricsHistory();
-  } else if (packetStore.noiseFloorHistory.length > 0) {
+  if (packetStore.noiseFloorHistory.length > 0) {
     noiseFloorData.value = {
       chart_data: packetStore.noiseFloorHistory.map((p) => ({
         timestamp: p.timestamp,
@@ -530,7 +526,7 @@ const createOrUpdatePacketRateChart = () => {
         } else {
           normalizedTimestamp = Date.now();
         }
-        return { x: normalizedTimestamp, y: value > PACKET_RATE_GUARD ? 0 : value };
+        return { x: normalizedTimestamp, y: value > PACKET_RATE_GUARD ? 0 : value * 3600 };
       });
     }
     if (txSeries?.data) {
@@ -545,7 +541,7 @@ const createOrUpdatePacketRateChart = () => {
         } else {
           normalizedTimestamp = Date.now();
         }
-        return { x: normalizedTimestamp, y: value > PACKET_RATE_GUARD ? 0 : value };
+        return { x: normalizedTimestamp, y: value > PACKET_RATE_GUARD ? 0 : value * 3600 };
       });
     }
   }
@@ -694,7 +690,7 @@ const createOrUpdatePacketRateChart = () => {
                 const label = context.dataset?.label || '';
                 const y = context.parsed?.y;
                 if (y == null) return label;
-                return `${label}: ${y.toFixed(3)}`;
+                return `${label}: ${y.toFixed(1)}`;
               },
             },
           },
@@ -727,7 +723,7 @@ const createOrUpdatePacketRateChart = () => {
             ticks: {
               color: getThemeColors().tickColor,
               callback: function (value) {
-                return typeof value === 'number' ? value.toFixed(3) : value;
+                return typeof value === 'number' ? value.toFixed(1) : value;
               },
             },
             min: yMin,
@@ -1019,11 +1015,11 @@ onBeforeUnmount(() => {
         </p>
         <div class="flex items-center gap-3 sm:gap-6 mb-3 sm:mb-4">
           <div class="flex items-center gap-2">
-            <div class="w-3 h-3 rounded-full bg-purple-400"></div>
+            <div class="w-3 h-3 rounded-full" :style="{ backgroundColor: CHART_COLORS.rx }"></div>
             <span class="text-content-secondary dark:text-content-muted text-sm">RX/hr</span>
           </div>
           <div class="flex items-center gap-2">
-            <div class="w-3 h-3 rounded-full bg-amber-400"></div>
+            <div class="w-3 h-3 rounded-full" :style="{ backgroundColor: CHART_COLORS.tx }"></div>
             <span class="text-content-secondary dark:text-content-muted text-sm">TX/hr</span>
           </div>
         </div>

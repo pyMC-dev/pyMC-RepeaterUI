@@ -448,7 +448,7 @@ const toggleMobileSidebar = () => {
               updateInfo.hasUpdate
                 ? 'bg-accent-red animate-pulse'
                 : updateInfo.isChecking
-                  ? 'bg-yellow-400 animate-pulse'
+                  ? 'bg-secondary animate-pulse'
                   : updateInfo.currentVersion
                     ? 'bg-accent-green'
                     : 'bg-content-muted/50'

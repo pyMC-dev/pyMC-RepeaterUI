@@ -356,7 +356,6 @@ async function checkPymcConsole() {
     const response = await ApiService.get('/check_pymc_console');
     if (response.success && response.data) {
       pymcConsoleExists.value = (response.data as { exists: boolean }).exists;
-      console.log('PyMC Console exists:', pymcConsoleExists.value);
     }
   } catch (error) {
     console.error('Failed to check PyMC Console:', error);

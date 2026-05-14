@@ -1030,14 +1030,14 @@ onBeforeUnmount(() => {
 
 .cpu-value:hover,
 .memory-value:hover {
-  background: rgba(245, 158, 11, 0.1);
+  background: color-mix(in srgb, var(--color-secondary) 10%, transparent);
   transform: scale(1.05);
 }
 
 /* Subtle glow effect for updated values */
 @keyframes value-update {
   0% {
-    background: rgba(245, 158, 11, 0.3);
+    background: color-mix(in srgb, var(--color-secondary) 30%, transparent);
   }
   100% {
     background: transparent;

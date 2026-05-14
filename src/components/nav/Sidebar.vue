@@ -54,15 +54,15 @@ const activePenalties = computed(() => dataService.advertTier.activePenalties);
 const adaptiveTierClass = computed(() => {
   switch (currentTier.value) {
     case 'quiet':
-      return 'bg-green-100 dark:bg-green-500/20 text-green-700 dark:text-green-400 border-green-500/50';
+      return 'bg-accent-green/20 text-accent-green border-accent-green/50';
     case 'normal':
-      return 'bg-blue-100 dark:bg-blue-500/20 text-blue-700 dark:text-blue-400 border-blue-500/50';
+      return 'bg-primary/20 text-primary border-primary/50';
     case 'busy':
-      return 'bg-yellow-100 dark:bg-yellow-500/20 text-yellow-700 dark:text-yellow-400 border-yellow-500/50';
+      return 'bg-secondary/20 text-secondary border-secondary/50';
     case 'congested':
-      return 'bg-red-100 dark:bg-red-500/20 text-red-700 dark:text-red-400 border-red-500/50';
+      return 'bg-accent-red/20 text-accent-red border-accent-red/50';
     default:
-      return 'bg-gray-100 dark:bg-gray-500/20 text-gray-700 dark:text-gray-400 border-gray-500/50';
+      return 'bg-surface-elevated text-content-muted border-stroke-subtle';
   }
 });
 

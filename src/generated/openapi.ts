@@ -1507,6 +1507,53 @@ export class Api<
         ...params,
       }),
   };
+  updateRadioHardwareConfig = {
+    /**
+     * @description Dedicated save endpoint for the Configuration → Radio Hardware tab. Preset mode ({"hardware_key": "...", "overrides": {...}}) applies the radio-settings.json preset backend-side — including fields the UI has no widgets for — then merges the overrides on top. Manual mode ({"radio_type": "...", "<section>": {...}}) accepts only the section owned by the radio_type; radio_type null/"none" disables the radio. Changes require a service restart to take effect.
+     *
+     * @tags System
+     * @name UpdateRadioHardwareConfigCreate
+     * @summary Change the radio hardware backend
+     * @request POST:/update_radio_hardware_config
+     * @secure
+     */
+    updateRadioHardwareConfigCreate: (
+      data: {
+        /** Preset key from radio-settings.json */
+        hardware_key?: string;
+        /** Per-section field overrides (preset mode) */
+        overrides?: object;
+        /** Radio backend (manual mode) */
+        radio_type?:
+          | "sx1262"
+          | "sx1262_ch341"
+          | "kiss"
+          | "pymc_usb"
+          | "pymc_tcp"
+          | "none"
+          | null;
+        [key: string]: any;
+      },
+      params: RequestParams = {},
+    ) =>
+      this.request<
+        {
+          success?: boolean;
+          restart_required?: boolean;
+          applied?: string[];
+          error?: string;
+        },
+        any
+      >({
+        path: `/update_radio_hardware_config`,
+        method: "POST",
+        body: data,
+        secure: true,
+        type: ContentType.Json,
+        format: "json",
+        ...params,
+      }),
+  };
   recentPackets = {
     /**
      * @description Retrieve recent packet history

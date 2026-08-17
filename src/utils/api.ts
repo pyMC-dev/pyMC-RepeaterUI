@@ -110,6 +110,11 @@ type SendRoomServerAdvertResponse = EndpointApiResponse<
 type ImportConfigResponse = EndpointApiResponse<
   (typeof generatedApiClient)['configImport']['configImportCreate']
 >;
+// Whole response body (success/restart_required/applied at the top level,
+// no nested data payload to unwrap).
+export type UpdateRadioHardwareConfigResponse = GeneratedEndpointData<
+  (typeof generatedApiClient)['updateRadioHardwareConfig']['updateRadioHardwareConfigCreate']
+>;
 export type LbtDiagnosticsApiResponse = EndpointApiResponse<
   (typeof generatedApiClient)['lbtDiagnostics']['lbtDiagnosticsList']
 >;
@@ -1290,6 +1295,30 @@ export class ApiService {
     }
   }
 
+  /**
+   * Change the radio hardware backend (Configuration → Radio Hardware tab).
+   *
+   * Preset mode: {hardware_key, overrides?} — the backend applies the full
+   * radio-settings.json preset (including fields this UI has no widgets
+   * for, e.g. use_dio3_tcxo), then merges the overrides on top.
+   * Manual mode: {radio_type, <section>} for custom builds.
+   */
+  static async updateRadioHardwareConfig(
+    payload: Record<string, unknown>,
+  ): Promise<UpdateRadioHardwareConfigResponse> {
+    try {
+      const params = await this.getGeneratedRequestParams();
+      const response =
+        await generatedApiClient.updateRadioHardwareConfig.updateRadioHardwareConfigCreate(
+          payload,
+          params,
+        );
+      return response.data;
+    } catch (error: unknown) {
+      throw this.handleError(error);
+    }
+  }
+
   static async exportIdentityKey(): Promise<
     ApiResponse<{
       identity_key_hex: string;
@@ -1390,6 +1419,25 @@ export class ApiService {
       } else if (error.request) {
         // Request was made but no response received
         return new Error('Network error - no response received');
+      }
+    }
+    // The generated fetch client (src/generated/openapi.ts) throws the whole
+    // HttpResponse on non-2xx: the parsed JSON body sits in `.error`. Surface
+    // the server's message instead of the generic fallback below.
+    if (typeof error === 'object' && error !== null && !(error instanceof Error)) {
+      const httpResponse = error as { error?: unknown; status?: number; statusText?: string };
+      const body = httpResponse.error;
+      if (typeof body === 'object' && body !== null) {
+        const parsed = body as { error?: unknown; message?: unknown };
+        const message = parsed.error ?? parsed.message;
+        if (typeof message === 'string' && message) {
+          return new Error(message);
+        }
+      }
+      if (typeof httpResponse.status === 'number') {
+        return new Error(
+          `HTTP ${httpResponse.status}${httpResponse.statusText ? ` - ${httpResponse.statusText}` : ''}`,
+        );
       }
     }
     // Something else happened

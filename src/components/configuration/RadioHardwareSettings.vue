@@ -143,20 +143,67 @@ const filteredBoardPresets = computed(() => {
   return hardwareOptions.value.filter((opt) => getHardwareRadioType(opt) === selectedRadioType.value);
 });
 
+// Preset keys already covered by an editable widget on this form (or preset
+// metadata that is not config at all). Everything else in the preset is
+// applied server-side and displayed read-only below the preset dropdown —
+// a preset field added upstream shows up here automatically, with no UI
+// change needed.
+const WIDGET_MANAGED_PRESET_KEYS = new Set([
+  'name',
+  'description',
+  'connection_type',
+  'radio_type',
+  'bus_id',
+  'cs_id',
+  'cs_pin',
+  'reset_pin',
+  'busy_pin',
+  'irq_pin',
+  'txen_pin',
+  'rxen_pin',
+  'en_pin',
+  'en_pins',
+  'txled_pin',
+  'rxled_pin',
+  'vid',
+  'pid',
+  'ch341',
+]);
+
+function formatPresetValue(value: unknown): string {
+  if (value === null || value === undefined) return '—';
+  if (typeof value === 'object') return JSON.stringify(value);
+  return String(value);
+}
+
+const presetManagedFields = computed(() => {
+  if (!selectedBoardPresetKey.value) return [] as Array<{ key: string; value: string }>;
+  const preset = hardwareOptions.value.find((opt) => opt.key === selectedBoardPresetKey.value);
+  if (!preset?.config) return [] as Array<{ key: string; value: string }>;
+  return Object.entries(preset.config)
+    .filter(([key]) => !WIDGET_MANAGED_PRESET_KEYS.has(key))
+    .map(([key, value]) => ({ key, value: formatPresetValue(value) }));
+});
+
 function applyBoardPreset(presetKey: string) {
   const preset = hardwareOptions.value.find((opt) => opt.key === presetKey);
   if (!preset || !preset.config) return;
   const cfg = preset.config;
 
-  sxBusId.value = asNumber(cfg.bus_id, sxBusId.value);
-  sxCsId.value = asNumber(cfg.cs_id, sxCsId.value);
-  sxCsPin.value = asNumber(cfg.cs_pin, sxCsPin.value);
-  sxResetPin.value = asNumber(cfg.reset_pin, sxResetPin.value);
-  sxBusyPin.value = asNumber(cfg.busy_pin, sxBusyPin.value);
-  sxIrqPin.value = asNumber(cfg.irq_pin, sxIrqPin.value);
-  sxTxEnPin.value = asNumber(cfg.txen_pin, sxTxEnPin.value);
-  sxRxEnPin.value = asNumber(cfg.rxen_pin, sxRxEnPin.value);
-  sxEnPin.value = asNumber(cfg.en_pin, sxEnPin.value);
+  // Fields absent from the preset reset to neutral defaults, NOT the
+  // previous board's values: the form must read "preset + deliberate
+  // edits", because at save time it is sent as overrides on top of the
+  // preset. A stale txen_pin from the previous board must not leak into
+  // the new one.
+  sxBusId.value = asNumber(cfg.bus_id, 0);
+  sxCsId.value = asNumber(cfg.cs_id, 0);
+  sxCsPin.value = asNumber(cfg.cs_pin, 21);
+  sxResetPin.value = asNumber(cfg.reset_pin, 18);
+  sxBusyPin.value = asNumber(cfg.busy_pin, 20);
+  sxIrqPin.value = asNumber(cfg.irq_pin, 16);
+  sxTxEnPin.value = asNumber(cfg.txen_pin, -1);
+  sxRxEnPin.value = asNumber(cfg.rxen_pin, -1);
+  sxEnPin.value = asNumber(cfg.en_pin, -1);
   if (Array.isArray(cfg.en_pins)) {
     sxEnPinsInput.value = cfg.en_pins
       .map((pin) => Number(pin))
@@ -165,12 +212,12 @@ function applyBoardPreset(presetKey: string) {
   } else {
     sxEnPinsInput.value = '';
   }
-  sxTxLedPin.value = asNumber(cfg.txled_pin, sxTxLedPin.value);
-  sxRxLedPin.value = asNumber(cfg.rxled_pin, sxRxLedPin.value);
+  sxTxLedPin.value = asNumber(cfg.txled_pin, -1);
+  sxRxLedPin.value = asNumber(cfg.rxled_pin, -1);
 
   if (selectedRadioType.value === 'sx1262_ch341') {
-    ch341Vid.value = asNumber(cfg.vid, ch341Vid.value);
-    ch341Pid.value = asNumber(cfg.pid, ch341Pid.value);
+    ch341Vid.value = asNumber(cfg.vid, 6790);
+    ch341Pid.value = asNumber(cfg.pid, 21778);
   }
 }
 
@@ -311,26 +358,24 @@ async function saveChanges(): Promise<boolean> {
       return false;
     }
 
-    const payload: Record<string, unknown> = {
-      radio_type: selectedRadioType.value === 'none' ? null : selectedRadioType.value,
-    };
+    const sections: Record<string, unknown> = {};
 
     if (selectedRadioType.value === 'kiss') {
-      payload.kiss = {
+      sections.kiss = {
         port: kissPort.value.trim() || '/dev/ttyUSB0',
         baud_rate: asNumber(kissBaudRate.value, 9600),
       };
     }
 
     if (selectedRadioType.value === 'pymc_usb') {
-      payload.pymc_usb = {
+      sections.pymc_usb = {
         port: pymcUsbPort.value.trim() || '/dev/ttyACM0',
         baudrate: asNumber(pymcUsbBaudRate.value, 921600),
       };
     }
 
     if (selectedRadioType.value === 'pymc_tcp') {
-      payload.pymc_tcp = {
+      sections.pymc_tcp = {
         host: pymcTcpHost.value.trim(),
         port: asNumber(pymcTcpPort.value, 5055),
         token: pymcTcpToken.value,
@@ -339,7 +384,7 @@ async function saveChanges(): Promise<boolean> {
 
     if (selectedRadioType.value === 'sx1262' || selectedRadioType.value === 'sx1262_ch341') {
       const parsedEnPins = parseEnPins(sxEnPinsInput.value);
-      payload.sx1262 = {
+      sections.sx1262 = {
         bus_id: asNumber(sxBusId.value, 0),
         cs_id: asNumber(sxCsId.value, 0),
         cs_pin: asNumber(sxCsPin.value, 21),
@@ -357,13 +402,26 @@ async function saveChanges(): Promise<boolean> {
     }
 
     if (selectedRadioType.value === 'sx1262_ch341') {
-      payload.ch341 = {
+      sections.ch341 = {
         vid: asNumber(ch341Vid.value, 6790),
         pid: asNumber(ch341Pid.value, 21778),
       };
     }
 
-    const result = await ApiService.importConfig(payload);
+    // Preset mode: send the preset key so the backend applies the FULL
+    // preset from radio-settings.json — including fields this form has no
+    // widgets for (use_dio3_tcxo, use_dio2_rf, gpio backend, ...). The
+    // visible form fields ride along as overrides: values equal to the
+    // preset are no-ops, deliberate edits win.
+    const usingPreset = showSx1262Fields.value && !!selectedBoardPresetKey.value;
+    const payload: Record<string, unknown> = usingPreset
+      ? { hardware_key: selectedBoardPresetKey.value, overrides: sections }
+      : {
+          radio_type: selectedRadioType.value === 'none' ? null : selectedRadioType.value,
+          ...sections,
+        };
+
+    const result = await ApiService.updateRadioHardwareConfig(payload);
 
     if (!result.success) {
       errorMessage.value = result.error || 'Failed to save settings';
@@ -694,6 +752,28 @@ watch(
             </p>
             <p class="text-xs text-content-muted">
               Optional: selecting a preset fills the pin fields below for quick setup changes.
+            </p>
+          </div>
+        </div>
+
+        <div
+          v-if="presetManagedFields.length > 0"
+          class="flex flex-col sm:flex-row sm:justify-between sm:items-start py-2 border-b border-stroke-subtle dark:border-stroke/opacity-light gap-2"
+        >
+          <span class="text-content-secondary dark:text-content-muted text-xs sm:text-sm">Preset-managed settings</span>
+          <div class="w-full sm:w-96 space-y-1">
+            <div
+              v-for="field in presetManagedFields"
+              :key="field.key"
+              class="flex justify-between text-xs sm:text-sm"
+            >
+              <span class="text-content-secondary dark:text-content-muted font-mono">{{ field.key }}</span>
+              <span class="text-content-primary font-mono">{{ field.value }}</span>
+            </div>
+            <p class="text-xs text-content-muted">
+              Applied from the preset by the server on save — not editable here.
+              When the preset defines tx_power or preamble_length, saving also
+              overrides those values in Radio Settings.
             </p>
           </div>
         </div>

@@ -24,13 +24,18 @@ export interface AirtimeBucket {
   tx_count: number;
 }
 
-export interface RadioAirtimeProfile {
-  frequency_hz?: number | null;
-  bandwidth_hz?: number | null;
-  spreading_factor?: number | null;
-  coding_rate?: number | null;
-  preamble_length?: number | null;
-}
+import type { RadioAirtimeProfile } from './useRadioProfiles';
+
+export {
+  formatBandwidth,
+  formatCodingRate,
+  formatFrequency,
+  formatModulation,
+  formatModulationDetail,
+  hasCompleteProfile,
+  profileSignature,
+  type RadioAirtimeProfile,
+} from './useRadioProfiles';
 
 export interface RadioAirtimeSeries {
   radio_id: string;
@@ -244,80 +249,4 @@ export function toRadioPanels(
       yAxisMax: panelYAxisMax(samples),
     };
   });
-}
-
-/** True when every field needed to describe the modulation is present. */
-export function hasCompleteProfile(profile: RadioAirtimeProfile | null | undefined): boolean {
-  if (!profile) return false;
-  return (
-    profile.spreading_factor != null && profile.bandwidth_hz != null && profile.coding_rate != null
-  );
-}
-
-/** "869.618 MHz", or null when the frequency is unknown. */
-export function formatFrequency(hz: number | null | undefined): string | null {
-  if (hz == null || !Number.isFinite(hz)) return null;
-  return `${(hz / 1e6).toFixed(3)} MHz`;
-}
-
-/** "62.5 kHz" / "250 kHz". */
-export function formatBandwidth(hz: number | null | undefined): string | null {
-  if (hz == null || !Number.isFinite(hz)) return null;
-  const khz = hz / 1000;
-  return `${Number.isInteger(khz) ? khz : khz.toFixed(1)} kHz`;
-}
-
-/**
- * "CR 4/8". The backend reports the denominator (5..8); older configs stored
- * the index form (1..4), which the radio driver reads as 4/(n+4).
- */
-export function formatCodingRate(cr: number | null | undefined): string | null {
-  if (cr == null || !Number.isFinite(cr)) return null;
-  const denominator = cr >= 5 ? cr : cr + 4;
-  return `CR 4/${denominator}`;
-}
-
-/** "SF8 · 62.5 kHz · CR 4/8", or null when the profile is incomplete. */
-export function formatModulation(profile: RadioAirtimeProfile | null | undefined): string | null {
-  if (!hasCompleteProfile(profile)) return null;
-  return [
-    `SF${profile!.spreading_factor}`,
-    formatBandwidth(profile!.bandwidth_hz),
-    formatCodingRate(profile!.coding_rate),
-  ]
-    .filter(Boolean)
-    .join(' · ');
-}
-
-/** Modulation plus preamble, for the heading tooltip and screen readers. */
-export function formatModulationDetail(
-  profile: RadioAirtimeProfile | null | undefined,
-): string | null {
-  const base = formatModulation(profile);
-  if (!base) return null;
-  const preamble = profile?.preamble_length;
-  return preamble == null ? base : `${base} · ${preamble} symbol preamble`;
-}
-
-/**
- * Signature of the air settings a set of panels was computed with. The cached
- * payload is only reusable while this still matches, so retuning a radio
- * redraws immediately instead of waiting out the data TTL.
- */
-export function profileSignature(
-  entries: { radioId: string; profile: RadioAirtimeProfile | null }[],
-): string {
-  return entries
-    .map((entry) => {
-      const p = entry.profile ?? {};
-      return [
-        entry.radioId,
-        p.spreading_factor ?? '',
-        p.bandwidth_hz ?? '',
-        p.coding_rate ?? '',
-        p.preamble_length ?? '',
-        p.frequency_hz ?? '',
-      ].join(':');
-    })
-    .join('|');
 }

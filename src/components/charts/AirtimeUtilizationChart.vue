@@ -37,7 +37,7 @@ export function __resetAirtimeCache() {
 import { ref, onMounted, computed } from 'vue';
 import { streamingGet } from '@/utils/streamingFetch';
 import { usePacketStore } from '@/stores/packets';
-import { useMultiRadioConfig } from '@/composables/useMultiRadioConfig';
+import { useRadioProfiles } from '@/composables/useRadioProfiles';
 import { useSystemStore } from '@/stores/system';
 import RadioAirtimePanel from '@/components/charts/RadioAirtimePanel.vue';
 import { useManagedPolling } from '@/composables/useManagedPolling';
@@ -48,7 +48,6 @@ import {
   profileSignature,
   toRadioPanels,
   type AirtimeChartPayload,
-  type RadioAirtimeProfile,
   type SeriesGrid,
 } from '@/composables/useAirtimeSeries';
 
@@ -59,7 +58,7 @@ const BUCKET_SECONDS = 60; // 1,440 server-side buckets vs 50,000 raw rows
 
 const packetStore = usePacketStore();
 const systemStore = useSystemStore();
-const { radios: configuredRadios, rootConfig, defaultRadioId } = useMultiRadioConfig();
+const { profiles: configProfiles } = useRadioProfiles();
 
 const panels = ref<RadioPanelData[]>([]);
 const isInitialFetch = ref(true);
@@ -75,56 +74,6 @@ const localStats = ref({ totalReceived: 0, totalTransmitted: 0, firstPacketTime:
 const isMultiPanel = computed(() => panels.value.length > 1);
 
 const windowKey = computed(() => `${WINDOW_HOURS}h/${BUCKET_SECONDS}s`);
-
-const toProfile = (air: Record<string, unknown> | undefined | null): RadioAirtimeProfile | null => {
-  if (!air || typeof air !== 'object') return null;
-  const num = (value: unknown): number | null => {
-    const parsed = Number(value);
-    return Number.isFinite(parsed) ? parsed : null;
-  };
-  return {
-    frequency_hz: num(air.frequency),
-    bandwidth_hz: num(air.bandwidth),
-    spreading_factor: num(air.spreading_factor),
-    coding_rate: num(air.coding_rate),
-    preamble_length: num(air.preamble_length),
-  };
-};
-
-/**
- * What the client believes is on the air, from /stats. Only used to label a
- * legacy single-radio response and to invalidate the cache after a retune; the
- * server decides which profile each radio's airtime is actually computed with.
- */
-const configProfiles = computed<{ radioId: string; profile: RadioAirtimeProfile | null }[]>(() => {
-  const reported = (systemStore.stats as Record<string, unknown> | null)?.radio_profiles;
-  if (Array.isArray(reported) && reported.length) {
-    return (reported as (RadioAirtimeProfile & { radio_id?: string })[]).map((entry) => ({
-      radioId: String(entry.radio_id ?? defaultRadioId.value),
-      profile: {
-        frequency_hz: entry.frequency_hz ?? null,
-        bandwidth_hz: entry.bandwidth_hz ?? null,
-        spreading_factor: entry.spreading_factor ?? null,
-        coding_rate: entry.coding_rate ?? null,
-        preamble_length: entry.preamble_length ?? null,
-      },
-    }));
-  }
-
-  if (configuredRadios.value.length) {
-    return configuredRadios.value.map((radio) => ({
-      radioId: radio.id,
-      profile: toProfile(radio.radio as Record<string, unknown> | undefined),
-    }));
-  }
-
-  return [
-    {
-      radioId: defaultRadioId.value,
-      profile: toProfile(rootConfig.value.radio as Record<string, unknown> | undefined),
-    },
-  ];
-});
 
 /** False until /stats gives us something to compare a cached signature against. */
 const hasKnownProfiles = computed(() =>

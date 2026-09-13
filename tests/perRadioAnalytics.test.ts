@@ -7,11 +7,18 @@ import { createMemoryHistory, createRouter } from 'vue-router';
 vi.mock('chart.js', () => {
   class FakeChart {
     static register = vi.fn();
-    data: { datasets: unknown[] } = { datasets: [] };
-    options = {};
+    static instances: FakeChart[] = [];
+    data: { datasets: Array<{ label?: string }> };
+    options: Record<string, unknown>;
     update = vi.fn();
     destroy = vi.fn();
     resize = vi.fn();
+
+    constructor(_ctx?: unknown, config?: { data?: FakeChart['data']; options?: Record<string, unknown> }) {
+      this.data = config?.data ?? { datasets: [] };
+      this.options = config?.options ?? {};
+      FakeChart.instances.push(this);
+    }
   }
   const element = {};
   return {
@@ -44,6 +51,7 @@ vi.mock('@/utils/api', async (importOriginal) => {
   };
 });
 
+import { Chart } from 'chart.js';
 import ApiService from '@/utils/api';
 import { streamingGet } from '@/utils/streamingFetch';
 import { useSystemStore } from '@/stores/system';
@@ -262,14 +270,18 @@ describe('radio scope in the URL', () => {
 // ---------------------------------------------------------------------------
 
 const statCard = {
-  props: ['title', 'value', 'data'],
+  props: ['title', 'subtitle', 'value', 'data'],
   template:
-    '<div data-testid="stat-card" :data-points="(data || []).length">{{ title }}={{ value }}</div>',
+    '<div data-testid="stat-card" :data-points="(data || []).length">{{ title }}{{ subtitle ? " · " + subtitle : "" }}={{ value }}</div>',
 };
 const statStubs = {
   SparklineChart: statCard,
   Sparkline: statCard,
-  ChartCard: { template: '<div><slot /></div>' },
+  ChartCard: {
+    props: ['isLoading', 'error'],
+    template:
+      '<div data-testid="chart-card" :data-loading="String(!!isLoading)" :data-error="error || \'\'"><slot /></div>',
+  },
 };
 
 function endpointData(endpoint: string): unknown {
@@ -327,14 +339,22 @@ describe('Statistics per radio', () => {
   it('labels the per-packet and per-radio TX counts and switches to a radio', async () => {
     const wrapper = await mountStatistics(BRIDGE_STATS);
 
-    expect(cards(wrapper)).toEqual(['Total RX=46', 'Total TX (per packet)=8', 'CRC Errors · north=0']);
+    expect(cards(wrapper)).toEqual([
+      'Total RX · All radios=46',
+      'Total TX · Per packet=8',
+      'CRC Errors · north only=0',
+    ]);
     expect(wrapper.get('[data-testid="noise-floor-radio-note"]').text()).toContain('north');
     expect(wrapper.text()).toContain('Direct');
 
     await wrapper.get('[data-testid="radio-scope-south"]').trigger('click');
     await flushPromises();
 
-    expect(cards(wrapper)).toEqual(['RX on south=18', 'Transmissions on south=8', 'CRC Errors · north=0']);
+    expect(cards(wrapper)).toEqual([
+      'Total RX · south=18',
+      'Transmissions · south=8',
+      'CRC Errors · north only=0',
+    ]);
     expect(wrapper.get('[data-testid="unattributed-note"]').text()).toContain('not counted for south');
     expect(wrapper.text()).toContain('Receptions on south.');
     expect(wrapper.text()).not.toContain('Direct');
@@ -394,6 +414,31 @@ describe('Statistics per radio', () => {
 
     await wrapper.get('[data-testid="radio-scope-south"]').trigger('click');
     await flushPromises();
+    expect(rxCardPoints(wrapper)).toBeGreaterThan(0);
+  });
+
+  it('shows a selected radio as loading, not empty, until its counts arrive', async () => {
+    // A drawable canvas, so the chart code runs as it does in a browser.
+    HTMLCanvasElement.prototype.getContext = vi.fn(() => ({})) as never;
+    const pendingRates: Array<() => void> = [];
+    mockedGet.mockImplementation((endpoint: string) => {
+      const response = { success: true, data: endpointData(endpoint) };
+      if (endpoint !== '/radio_packet_rates') return Promise.resolve(response) as never;
+      return new Promise((resolve) => pendingRates.push(() => resolve(response))) as never;
+    });
+
+    const wrapper = await mountStatistics(BRIDGE_STATS);
+    await wrapper.get('[data-testid="radio-scope-south"]').trigger('click');
+    await flushPromises();
+
+    const rateCard = () => wrapper.findAll('[data-testid="chart-card"]')[0];
+    expect(rateCard().attributes('data-loading')).toBe('true');
+    expect(rateCard().attributes('data-error')).toBe('');
+
+    pendingRates.forEach((resolve) => resolve());
+    await flushPromises();
+    expect(rateCard().attributes('data-loading')).toBe('false');
+    expect(rateCard().attributes('data-error')).toBe('');
     expect(rxCardPoints(wrapper)).toBeGreaterThan(0);
   });
 
@@ -550,6 +595,53 @@ describe('Neighbour Links per radio', () => {
     stale.forEach((resolve) => resolve());
     await flushPromises();
     expect(wrapper.get('[data-testid="stability-status"]').text()).toBe('Low variation');
+  });
+
+  it('redraws history per radio when the radio list arrives after it', async () => {
+    HTMLCanvasElement.prototype.getContext = vi.fn(() => ({})) as never;
+    (Chart as unknown as { instances: unknown[] }).instances.length = 0;
+    const row = (index: number, rx_radio_id: string, is_duplicate = false) => ({
+      timestamp: 1_700_000_000 + index * 20,
+      rssi: -90,
+      snr: 5,
+      score: 0.8,
+      is_duplicate,
+      packet_hash: `h${index}`,
+      packet_type: 1,
+      route_type: 1,
+      path_hop_count: 1,
+      rx_radio_id,
+    });
+    vi.mocked(ApiService.getNeighborLinkHistory).mockResolvedValue({
+      success: true,
+      data: {
+        peer_hash: 'AB12',
+        path_hash_size: 1,
+        hours: 24,
+        limit: 1000,
+        rows: [row(0, 'north'), row(1, 'south'), row(2, 'north', true)],
+        count: 3,
+      },
+    } as never);
+
+    const pinia = seedPinia({});
+    const wrapper = mount(NeighbourLinks, {
+      global: { plugins: [pinia], stubs: { ChartCard: { template: '<div><slot /></div>' } } },
+    });
+    await flushPromises();
+
+    useSystemStore().stats = BRIDGE_STATS as never;
+    await flushPromises();
+
+    const charts = (Chart as unknown as { instances: Array<{ data: { datasets: Array<{ label?: string }> } }> })
+      .instances;
+    const perRadio = charts.filter(
+      (chart) =>
+        JSON.stringify(chart.data.datasets.map((d) => d.label)) ===
+        JSON.stringify(['north', 'south', 'north duplicate']),
+    );
+    expect(perRadio).toHaveLength(3); // RSSI, SNR and RX score
+    wrapper.unmount();
   });
 
   it('adds no radio column on a single-radio node', async () => {

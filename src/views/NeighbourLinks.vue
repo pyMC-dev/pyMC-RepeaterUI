@@ -509,15 +509,25 @@ function buildHistoryDatasets(
   return [
     ...groupRowsByRadio(uniquePoints, radioOrder).map((group) => firstSeenLine(
       group.rows,
-      `${label} (first-seen, ${radioName(group.radioId)})`,
+      radioName(group.radioId),
       palette[slot(group.radioId) % palette.length],
     )),
     ...groupRowsByRadio(duplicatePoints, radioOrder).map((group) => duplicateScatter(
       group.rows,
-      `${label} (duplicate, ${radioName(group.radioId)})`,
+      `${radioName(group.radioId)} duplicate`,
       markers[slot(group.radioId) % markers.length],
     )),
   ];
+}
+
+/**
+ * Legend labels for a history chart. Per-radio series double or triple the
+ * entries, so they get a compact legend rather than one that crowds out the plot.
+ */
+function historyLegendLabels(datasetCount: number) {
+  const labels = { color: cssVar('--color-text-primary', '#0f172a') };
+  if (datasetCount <= 2) return labels;
+  return { ...labels, boxWidth: 10, boxHeight: 10, padding: 6, font: { size: 10 } };
 }
 
 function createOrUpdateHistoryChart(
@@ -536,6 +546,8 @@ function createOrUpdateHistoryChart(
 
   if (chartRef.value) {
     chartRef.value.data.datasets = datasets;
+    const legend = chartRef.value.options.plugins?.legend;
+    if (legend) legend.labels = historyLegendLabels(datasets.length);
     chartRef.value.update('none');
     return;
   }
@@ -615,9 +627,7 @@ function createOrUpdateHistoryChart(
           },
         },
         legend: {
-          labels: {
-            color: cssVar('--color-text-primary', '#0f172a'),
-          },
+          labels: historyLegendLabels(datasets.length),
         },
       },
     },
@@ -761,8 +771,9 @@ watch(
   { deep: true },
 );
 
+// The radio list can arrive after the history; per-radio series need a redraw then.
 watch(
-  () => historyRows.value,
+  () => [historyRows.value, isMultiRadio.value] as const,
   async () => {
     await nextTick();
 

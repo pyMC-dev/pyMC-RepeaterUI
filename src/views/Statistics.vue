@@ -236,6 +236,12 @@ const chartMetrics = computed<MetricsData | null>(() => {
   return ratesToMetricSeries(radioRatesData.value, radioScope.value, Math.floor(Date.now() / 1000));
 });
 
+// A radio is selected but its counts have not arrived yet (for instance a ?radio= link
+// opened before the radio list loaded): show loading, not "no data".
+const ratesPending = computed(
+  () => radioScope.value !== ALL_RADIOS && !radioRatesData.value && !radioRatesError.value,
+);
+
 const displayedRouteTotals = computed(() =>
   routeTotalsForScope(routeStatsData.value, radioScope.value),
 );
@@ -246,11 +252,17 @@ const unattributedCounts = computed(() => ({
 }));
 
 // Node totals count a relay once however many radios sent it; per radio, each send counts.
+// Qualifiers go in the card subtitle so titles stay short enough for three cards in a row.
 const cardTitles = computed(() => {
-  if (!isMultiRadio.value) return { rx: 'Total RX', tx: 'Total TX', crc: 'CRC Errors' };
-  const crc = `CRC Errors · ${defaultRadioId.value}`;
-  if (radioScope.value === ALL_RADIOS) return { rx: 'Total RX', tx: 'Total TX (per packet)', crc };
-  return { rx: `RX on ${radioScope.value}`, tx: `Transmissions on ${radioScope.value}`, crc };
+  if (!isMultiRadio.value) {
+    return { rx: 'Total RX', rxSub: '', tx: 'Total TX', txSub: '', crc: 'CRC Errors', crcSub: '' };
+  }
+  const crc = { crc: 'CRC Errors', crcSub: `${defaultRadioId.value} only` };
+  if (radioScope.value === ALL_RADIOS) {
+    return { rx: 'Total RX', rxSub: 'All radios', tx: 'Total TX', txSub: 'Per packet', ...crc };
+  }
+  const radio = radioScope.value;
+  return { rx: 'Total RX', rxSub: radio, tx: 'Transmissions', txSub: radio, ...crc };
 });
 
 // Aggregate data into buckets - ~72 buckets regardless of time range
@@ -590,6 +602,8 @@ const createOrUpdatePacketRateChart = () => {
 
   const ctx = packetRateCanvasRef.value.getContext('2d');
   if (!ctx) return;
+
+  if (ratesPending.value) return;
 
   // Process metrics data
   let rxData: Array<{ x: number; y: number }> = [];
@@ -1065,10 +1079,11 @@ onBeforeUnmount(() => {
       <!-- Total RX -->
       <SparklineChart
         :title="cardTitles.rx"
+        :subtitle="cardTitles.rxSub"
         :value="topStats.totalRx"
         :color="CHART_COLORS.totalRx"
         :data="sparklineData.totalPackets"
-        :loading="chartLoadingStates.sparklineMetrics"
+        :loading="chartLoadingStates.sparklineMetrics || ratesPending"
         :error="packetRateChartError"
         variant="classic"
         @retry="() => { chartLoadingStates.sparklineMetrics = true; chartLoadingStates.packetRate = true; packetRateChartError = null; void loadMetricsData(); }"
@@ -1077,10 +1092,11 @@ onBeforeUnmount(() => {
       <!-- Total TX -->
       <SparklineChart
         :title="cardTitles.tx"
+        :subtitle="cardTitles.txSub"
         :value="topStats.totalTx"
         :color="CHART_COLORS.totalTx"
         :data="sparklineData.transmittedPackets"
-        :loading="chartLoadingStates.sparklineMetrics"
+        :loading="chartLoadingStates.sparklineMetrics || ratesPending"
         :error="packetRateChartError"
         variant="classic"
         @retry="() => { chartLoadingStates.sparklineMetrics = true; chartLoadingStates.packetRate = true; packetRateChartError = null; void loadMetricsData(); }"
@@ -1089,6 +1105,7 @@ onBeforeUnmount(() => {
       <!-- CRC Errors -->
       <SparklineChart
         :title="cardTitles.crc"
+        :subtitle="cardTitles.crcSub"
         :value="crcErrorData.reduce((sum, d) => sum + d.count, 0)"
         :color="CHART_COLORS.crcErrors"
         :data="sparklineData.crcErrors"
@@ -1136,7 +1153,7 @@ onBeforeUnmount(() => {
         </div>
         <ChartCard
           class="h-40 sm:h-48 rounded-lg p-2 sm:p-4"
-          :is-loading="chartLoadingStates.packetRate"
+          :is-loading="chartLoadingStates.packetRate || ratesPending"
           :error="packetRateChartError"
           :status="chartStatus.packetRate"
           @retry="() => { chartLoadingStates.packetRate = true; packetRateChartError = null; void loadMetricsData(); }"

@@ -17,6 +17,9 @@ import 'chartjs-adapter-date-fns';
 import ChartCard from '@/components/ui/ChartCard.vue';
 import { useManagedPolling } from '@/composables/useManagedPolling';
 import ApiService from '@/utils/api';
+import RadioScopeSelector from '@/components/ui/RadioScopeSelector.vue';
+import { ALL_RADIOS, useRadioScope } from '@/composables/useRadioProfiles';
+import { groupRowsByRadio, linkForRadio } from '@/utils/radioAnalytics';
 import type {
   NeighborLinkHistoryPoint,
   NeighborLinkHistoryPayload,
@@ -78,6 +81,15 @@ const rssiChart = ref<ChartJS | null>(null);
 const snrChart = ref<ChartJS | null>(null);
 const scoreChart = ref<ChartJS | null>(null);
 
+const { profiles: radioProfiles, isMultiRadio, scope: radioScope } = useRadioScope();
+
+/** Links as the selected radio heard them; every link, merged, under All radios. */
+const scopedLinks = computed(() =>
+  links.value
+    .map((link) => linkForRadio(link, radioScope.value))
+    .filter((link): link is NeighborLinkLive => link !== null),
+);
+
 const cssVar = (name: string, fallback: string): string => {
   if (typeof window === 'undefined') return fallback;
   return window.getComputedStyle(document.documentElement).getPropertyValue(name).trim() || fallback;
@@ -109,13 +121,13 @@ const ratioForLink = (link: NeighborLinkLive): number => {
 
 const selectedLink = computed<NeighborLinkLive | null>(() => {
   if (!selectedLinkKey.value) return null;
-  return links.value.find((link) => linkKey(link) === selectedLinkKey.value) ?? null;
+  return scopedLinks.value.find((link) => linkKey(link) === selectedLinkKey.value) ?? null;
 });
 
 const sortedFilteredLinks = computed(() => {
   const normalizedSearch = search.value.trim().toLowerCase();
 
-  const filtered = links.value.filter((link) => {
+  const filtered = scopedLinks.value.filter((link) => {
     if (statusFilter.value === 'active' && !link.active) return false;
     if (statusFilter.value === 'inactive' && link.active) return false;
     if (pathSizeFilter.value !== 'all' && link.path_hash_size !== Number(pathSizeFilter.value)) return false;
@@ -141,19 +153,19 @@ const sortedFilteredLinks = computed(() => {
 
 const availablePathSizes = computed(() => {
   const sizes = new Set<number>();
-  links.value.forEach((link) => sizes.add(link.path_hash_size));
+  scopedLinks.value.forEach((link) => sizes.add(link.path_hash_size));
   return [...sizes].sort((a, b) => a - b);
 });
 
 const kpis = computed(() => {
-  const total = links.value.length;
-  const active = links.value.filter((link) => link.active).length;
+  const total = scopedLinks.value.length;
+  const active = scopedLinks.value.filter((link) => link.active).length;
   const avgScore = total > 0
-    ? links.value.reduce((acc, link) => acc + (Number.isFinite(link.ewma_score) ? link.ewma_score : 0), 0) / total
+    ? scopedLinks.value.reduce((acc, link) => acc + (Number.isFinite(link.ewma_score) ? link.ewma_score : 0), 0) / total
     : 0;
 
-  const sampleSum = links.value.reduce((acc, link) => acc + Math.max(0, link.sample_count), 0);
-  const duplicateSum = links.value.reduce((acc, link) => acc + Math.max(0, link.duplicate_sample_count), 0);
+  const sampleSum = scopedLinks.value.reduce((acc, link) => acc + Math.max(0, link.sample_count), 0);
+  const duplicateSum = scopedLinks.value.reduce((acc, link) => acc + Math.max(0, link.duplicate_sample_count), 0);
   const duplicateRatio = sampleSum > 0 ? duplicateSum / sampleSum : 0;
 
   return {
@@ -246,17 +258,17 @@ function selectLink(link: NeighborLinkLive) {
 }
 
 function chooseDefaultSelection() {
-  if (links.value.length === 0) {
+  if (scopedLinks.value.length === 0) {
     selectedLinkKey.value = null;
     return;
   }
 
-  const stillExists = links.value.some((link) => linkKey(link) === selectedLinkKey.value);
+  const stillExists = scopedLinks.value.some((link) => linkKey(link) === selectedLinkKey.value);
   if (stillExists) {
     return;
   }
 
-  selectedLinkKey.value = linkKey(sortedFilteredLinks.value[0] ?? links.value[0]);
+  selectedLinkKey.value = linkKey(sortedFilteredLinks.value[0] ?? scopedLinks.value[0]);
 }
 
 async function fetchLinks() {
@@ -310,6 +322,7 @@ async function fetchHistory() {
       path_hash_size: link.path_hash_size,
       hours: selectedHours.value,
       limit: HISTORY_LIMIT,
+      ...(radioScope.value !== ALL_RADIOS ? { radio_id: radioScope.value } : {}),
     });
 
     if (!response.success || !response.data) {
@@ -375,31 +388,40 @@ watch(
   },
 );
 
+watch(
+  () => radioScope.value,
+  () => {
+    const previous = selectedLinkKey.value;
+    chooseDefaultSelection();
+    // A new selection reloads history through its own watcher.
+    if (selectedLinkKey.value !== previous) return;
+    historyLoadedOnce.value = false;
+    historyLoading.value = true;
+    historyError.value = null;
+    historyRows.value = [];
+    void fetchHistory();
+  },
+);
+
+type HistoryChartPoint = {
+  x: number;
+  y: number;
+  rssi: number | null;
+  snr: number | null;
+  is_duplicate: boolean;
+  packet_type: number;
+  route_type: number;
+  path_hop_count: number | null;
+  rx_radio_id: string | null;
+};
+
 function buildHistoryDatasets(
   metricKey: 'rssi' | 'snr' | 'score',
   label: string,
   color: string,
 ): ChartDataset<'line' | 'scatter', { x: number; y: number }[]>[] {
-  const uniquePoints: ({
-    x: number;
-    y: number;
-    rssi: number | null;
-    snr: number | null;
-    is_duplicate: boolean;
-    packet_type: number;
-    route_type: number;
-    path_hop_count: number | null;
-  })[] = [];
-  const duplicatePoints: ({
-    x: number;
-    y: number;
-    rssi: number | null;
-    snr: number | null;
-    is_duplicate: boolean;
-    packet_type: number;
-    route_type: number;
-    path_hop_count: number | null;
-  })[] = [];
+  const uniquePoints: HistoryChartPoint[] = [];
+  const duplicatePoints: HistoryChartPoint[] = [];
 
   historyRows.value.forEach((row) => {
     const value = row[metricKey];
@@ -414,6 +436,7 @@ function buildHistoryDatasets(
       packet_type: row.packet_type,
       route_type: row.route_type,
       path_hop_count: row.path_hop_count,
+      rx_radio_id: row.rx_radio_id ?? null,
     };
     if (row.is_duplicate) {
       duplicatePoints.push(point);
@@ -422,17 +445,36 @@ function buildHistoryDatasets(
     }
   });
 
+  const firstSeenLine = (data: HistoryChartPoint[], lineLabel: string, lineColor: string) => ({
+    type: 'line' as const,
+    label: lineLabel,
+    data,
+    borderColor: lineColor,
+    backgroundColor: lineColor,
+    pointRadius: 2,
+    pointHoverRadius: 4,
+    tension: 0.2,
+  });
+
+  // Under All radios on a bridge, one first-seen line per radio that heard the peer.
+  const palette = [
+    color,
+    cssVar('--openhop-purple-light', '#a78bfa'),
+    cssVar('--color-accent-cyan', '#06b6d4'),
+    cssVar('--color-accent-green', '#10b981'),
+  ];
+  const firstSeen = isMultiRadio.value && radioScope.value === ALL_RADIOS
+    ? groupRowsByRadio(uniquePoints, radioProfiles.value.map((radio) => radio.radioId)).map(
+      (group, index) => firstSeenLine(
+        group.rows,
+        `${label} (first-seen, ${group.radioId ?? 'no radio'})`,
+        palette[index % palette.length],
+      ),
+    )
+    : [firstSeenLine(uniquePoints, `${label} (first-seen)`, color)];
+
   return [
-    {
-      type: 'line',
-      label: `${label} (first-seen)`,
-      data: uniquePoints,
-      borderColor: color,
-      backgroundColor: color,
-      pointRadius: 2,
-      pointHoverRadius: 4,
-      tension: 0.2,
-    },
+    ...firstSeen,
     {
       type: 'scatter',
       label: `${label} (duplicate)`,
@@ -522,9 +564,11 @@ function createOrUpdateHistoryChart(
                 packet_type: number;
                 route_type: number;
                 path_hop_count: number | null;
+                rx_radio_id: string | null;
               };
 
               return [
+                ...(raw.rx_radio_id ? [`Radio: ${raw.rx_radio_id}`] : []),
                 `Timestamp: ${new Date(raw.x).toLocaleString()}`,
                 `RX score: ${formatMetric(raw.y, 3)}`,
                 `RSSI: ${formatMetric(raw.rssi, 1)}`,
@@ -553,7 +597,7 @@ function createOrUpdateScatterChart() {
   const ctx = scatterCanvasRef.value.getContext('2d');
   if (!ctx) return;
 
-  const points = links.value.map((link) => ({
+  const points = scopedLinks.value.map((link) => ({
     x: Number.isFinite(link.ewma_score) ? link.ewma_score : 0,
     y: ratioForLink(link) * 100,
     peer_hash: link.peer_hash,
@@ -676,7 +720,7 @@ function createOrUpdateScatterChart() {
 }
 
 watch(
-  () => links.value,
+  () => scopedLinks.value,
   async () => {
     await nextTick();
     createOrUpdateScatterChart();
@@ -754,6 +798,7 @@ onBeforeUnmount(() => {
       </div>
 
       <div class="flex flex-wrap items-center gap-2">
+        <RadioScopeSelector v-model="radioScope" :radios="radioProfiles" />
         <button
           type="button"
           class="modal-btn-cancel !py-2 !px-3 !text-sm"
@@ -877,6 +922,7 @@ onBeforeUnmount(() => {
             <tr class="text-left border-b border-stroke-subtle">
               <th class="py-2 pr-3"><button class="text-content-secondary hover:text-content-primary" @click="setSort('peer_hash')">Peer</button></th>
               <th class="py-2 pr-3"><button class="text-content-secondary hover:text-content-primary" @click="setSort('path_hash_size')">Path Size</button></th>
+              <th v-if="isMultiRadio" class="py-2 pr-3">Heard on</th>
               <th class="py-2 pr-3"><button class="text-content-secondary hover:text-content-primary" @click="setSort('sample_count')">Samples</button></th>
               <th class="py-2 pr-3">
                 <button class="text-content-secondary hover:text-content-primary flex items-center gap-1" @click="setSort('duplicate_ratio')">
@@ -907,6 +953,15 @@ onBeforeUnmount(() => {
             >
               <td class="py-2 pr-3 font-mono text-content-primary">{{ link.peer_hash }}</td>
               <td class="py-2 pr-3 text-content-primary">{{ link.path_hash_size }}</td>
+              <td v-if="isMultiRadio" class="py-2 pr-3" data-testid="link-radios">
+                <span
+                  v-for="radio in link.radios ?? []"
+                  :key="radio.radio_id"
+                  class="inline-block px-1.5 py-0.5 mr-1 rounded text-xs"
+                  :class="radio.radio_id === radioScope ? 'bg-primary/20 text-primary' : 'bg-background-mute text-content-secondary'"
+                  :title="`${radio.radio_id}: ${radio.sample_count} samples, RSSI ${formatMetric(radio.last_rssi, 1)}, SNR ${formatMetric(radio.last_snr, 1)}`"
+                >{{ radio.radio_id }}</span>
+              </td>
               <td class="py-2 pr-3 text-content-primary">{{ link.sample_count }}</td>
               <td class="py-2 pr-3 text-content-primary">{{ formatPercent(ratioForLink(link)) }}</td>
               <td class="py-2 pr-3 text-content-primary">{{ formatMetric(link.last_rssi, 1) }}</td>
@@ -923,7 +978,7 @@ onBeforeUnmount(() => {
               </td>
             </tr>
             <tr v-if="sortedFilteredLinks.length === 0">
-              <td colspan="9" class="py-5 text-center text-content-secondary" data-testid="links-empty">
+              <td :colspan="isMultiRadio ? 10 : 9" class="py-5 text-center text-content-secondary" data-testid="links-empty">
                 No neighbour links match the current filters.
               </td>
             </tr>
@@ -953,6 +1008,39 @@ onBeforeUnmount(() => {
           <div class="text-content-primary" data-testid="selected-ewma-rx-score">{{ formatMetric(selectedLink.ewma_score) }}</div>
           <div class="text-content-secondary">Best / Worst RX Score</div>
           <div class="text-content-primary">{{ formatMetric(selectedLink.best_score) }} / {{ formatMetric(selectedLink.worst_score) }}</div>
+        </div>
+
+        <div
+          v-if="isMultiRadio && radioScope === ALL_RADIOS && selectedLink.radios?.length"
+          class="mt-4 overflow-x-auto"
+          data-testid="selected-radios"
+        >
+          <table class="w-full text-sm">
+            <thead>
+              <tr class="text-left text-content-secondary border-b border-stroke-subtle">
+                <th class="py-1 pr-3 font-normal">Radio</th>
+                <th class="py-1 pr-3 font-normal">Samples</th>
+                <th class="py-1 pr-3 font-normal">RSSI</th>
+                <th class="py-1 pr-3 font-normal">SNR</th>
+                <th class="py-1 pr-3 font-normal">EWMA RX Score</th>
+                <th class="py-1 pr-0 font-normal">Last Seen</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr
+                v-for="radio in selectedLink.radios"
+                :key="radio.radio_id"
+                class="border-b border-stroke-subtle/60"
+              >
+                <td class="py-1 pr-3 font-mono text-content-primary">{{ radio.radio_id }}</td>
+                <td class="py-1 pr-3 text-content-primary">{{ radio.sample_count }}</td>
+                <td class="py-1 pr-3 text-content-primary">{{ formatMetric(radio.last_rssi, 1) }}</td>
+                <td class="py-1 pr-3 text-content-primary">{{ formatMetric(radio.last_snr, 1) }}</td>
+                <td class="py-1 pr-3 text-content-primary">{{ formatMetric(radio.ewma_score, 2) }}</td>
+                <td class="py-1 pr-0 text-content-secondary">{{ formatTime(radio.last_seen) }}</td>
+              </tr>
+            </tbody>
+          </table>
         </div>
       </div>
 

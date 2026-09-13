@@ -22,6 +22,7 @@ import IncidentDetailsModal from '@/components/modals/IncidentDetailsModal.vue';
 import { useManagedPolling } from '@/composables/useManagedPolling';
 import ApiService, { type LbtDiagnosticsApiResponse, type LbtDiagnosticsPayload } from '@/utils/api';
 import { streamingGet } from '@/utils/streamingFetch';
+import { useRadioProfiles } from '@/composables/useRadioProfiles';
 
 ChartJS.register(
   CategoryScale,
@@ -40,6 +41,9 @@ ChartJS.register(
 );
 
 defineOptions({ name: 'RfHealthCorrelationView' });
+
+// Noise floor and CRC are still sampled from the default radio only; say so on a bridge.
+const { profiles: radioProfiles, isMultiRadio, defaultRadioId } = useRadioProfiles();
 
 type TimeValuePoint = { t: number; v: number };
 type CorrelationRow = {
@@ -1973,6 +1977,15 @@ onBeforeUnmount(() => {
         <p class="text-xs sm:text-sm text-content-secondary mt-1">
           Live correlation of noise floor, CRC errors, and packet activity so you can spot traffic-related peaks.
         </p>
+        <p
+          v-if="isMultiRadio"
+          class="text-xs text-content-muted mt-1"
+          data-testid="multi-radio-note"
+        >
+          This node has {{ radioProfiles.length }} radios. Noise floor and CRC errors are measured on
+          the default radio ({{ defaultRadioId }}), packet counts cover every radio, and LBT figures
+          describe the first radio that sent each packet.
+        </p>
       </div>
    
    <!-- Incident Details Modal -->
@@ -2003,14 +2016,18 @@ onBeforeUnmount(() => {
       </div>
 
       <div class="glass-card rounded-[15px] p-4">
-        <div class="text-content-secondary text-xs uppercase tracking-wide">Current noise floor</div>
+        <div class="text-content-secondary text-xs uppercase tracking-wide">
+          Current noise floor<span v-if="isMultiRadio" class="normal-case"> · {{ defaultRadioId }}</span>
+        </div>
         <div class="mt-2 text-2xl font-semibold text-content-primary">
           {{ currentNoiseFloor === null ? 'N/A' : `${currentNoiseFloor.toFixed(1)} dBm` }}
         </div>
       </div>
 
       <div class="glass-card rounded-[15px] p-4">
-        <div class="text-content-secondary text-xs uppercase tracking-wide">CRC errors</div>
+        <div class="text-content-secondary text-xs uppercase tracking-wide">
+          CRC errors<span v-if="isMultiRadio" class="normal-case"> · {{ defaultRadioId }}</span>
+        </div>
         <div class="mt-2 text-2xl font-semibold text-content-primary">
           {{ Math.round(totalCrcErrors).toLocaleString() }}
         </div>

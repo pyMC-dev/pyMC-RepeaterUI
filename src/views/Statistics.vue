@@ -1,10 +1,22 @@
 <script setup lang="ts">
-import { ref, reactive, onMounted, onBeforeUnmount, computed, nextTick, toRaw, markRaw } from 'vue';
+import { ref, reactive, onMounted, onBeforeUnmount, computed, nextTick, toRaw, markRaw, watch } from 'vue';
 import { usePacketStore } from '@/stores/packets';
 import { streamingGet } from '@/utils/streamingFetch';
 import { mapNoiseFloorValue } from '@/utils/noiseFloor';
 import SparklineChart from '@/components/ui/Sparkline.vue';
 import ChartCard from '@/components/ui/ChartCard.vue';
+import RadioScopeSelector from '@/components/ui/RadioScopeSelector.vue';
+import { ALL_RADIOS, useRadioScope } from '@/composables/useRadioProfiles';
+import {
+  packetTotalsForScope,
+  rateBucketSeconds,
+  ratesToMetricSeries,
+  routeTotalsForScope,
+  type MetricsData,
+  type PacketStatsPayload,
+  type RadioPacketRatesPayload,
+  type RouteStatsPayload,
+} from '@/utils/radioAnalytics';
 
 import {
   Chart as ChartJS,
@@ -49,14 +61,6 @@ ChartJS.register(
   TimeScale,
 );
 
-interface MetricsData {
-  series: Array<{
-    name: string;
-    type: string;
-    data: Array<[number, number]>;
-  }>;
-}
-
 
 interface NoiseFloorData {
   chart_data: Array<{
@@ -77,14 +81,6 @@ interface NoiseFloorApiResponse {
   count: number;
 }
 
-interface RouteStatsData {
-  hours: number;
-  route_totals: Record<string, number>;
-  total_packets: number;
-  period: string;
-  data_source: string;
-}
-
 interface SignalMetrics {
   timestamp: number;
   snr: number | null;
@@ -93,6 +89,12 @@ interface SignalMetrics {
 }
 
 const packetStore = usePacketStore();
+const {
+  profiles: radioProfiles,
+  isMultiRadio,
+  defaultRadioId,
+  scope: radioScope,
+} = useRadioScope();
 
 // Returns Chart.js time-axis unit and display format appropriate for the selected range.
 // ≤ 24 h → hour ticks with HH:mm; 24–48 h → include day name; > 48 h → day ticks with date.
@@ -182,8 +184,10 @@ const timeOptions = [
 
 // State for different metrics
 const metricsData = ref<MetricsData | null>(null);
+// Per-radio counts from /radio_packet_rates; fetched only on a multi-radio node.
+const radioRatesData = ref<RadioPacketRatesPayload | null>(null);
 const noiseFloorData = ref<NoiseFloorData | null>(null);
-const routeStatsData = ref<RouteStatsData | null>(null);
+const routeStatsData = ref<RouteStatsPayload | null>(null);
 const signalMetricsHistory = ref<SignalMetrics[]>([]);
 const crcErrorData = ref<Array<{ timestamp: number; count: number }>>([]);
 const isLoading = ref(true);
@@ -215,10 +219,38 @@ const signalMetricsCanvasRef = ref<HTMLCanvasElement | null>(null);
 // This is a historical reporting page — data loads on mount and on explicit time-range
 // changes only. Prior to this revision the page polled every 30s and read reactive store
 // refs, but the data resolution meant those updates carried no meaningful change; all
-// live packet data is on the Dashboard. topStats is a local snapshot rather than a
-// computed on packetStore.packetStats so that WebSocket pushes cannot overwrite the
-// time-scoped result between user interactions.
-const topStats = ref({ totalRx: 0, totalTx: 0 });
+// live packet data is on the Dashboard. packetStatsData is a local snapshot rather than
+// packetStore.packetStats so that WebSocket pushes cannot overwrite the time-scoped
+// result between user interactions.
+const packetStatsData = ref<PacketStatsPayload | null>(null);
+const topStats = computed(() => {
+  const totals = packetTotalsForScope(packetStatsData.value, radioScope.value);
+  return { totalRx: totals.rx, totalTx: totals.tx };
+});
+
+/** What the packet-rate chart and sparklines draw for the selected radio scope. */
+const chartMetrics = computed<MetricsData | null>(() => {
+  if (radioScope.value === ALL_RADIOS) return metricsData.value;
+  if (!radioRatesData.value) return null;
+  return ratesToMetricSeries(radioRatesData.value, radioScope.value, Math.floor(Date.now() / 1000));
+});
+
+const displayedRouteTotals = computed(() =>
+  routeTotalsForScope(routeStatsData.value, radioScope.value),
+);
+
+const unattributedCounts = computed(() => ({
+  rx: packetStatsData.value?.unattributed_rx_count ?? 0,
+  tx: packetStatsData.value?.unattributed_tx_count ?? 0,
+}));
+
+// Node totals count a relay once however many radios sent it; per radio, each send counts.
+const cardTitles = computed(() => {
+  if (!isMultiRadio.value) return { rx: 'Total RX', tx: 'Total TX', crc: 'CRC Errors' };
+  const crc = `CRC Errors · ${defaultRadioId.value}`;
+  if (radioScope.value === ALL_RADIOS) return { rx: 'Total RX', tx: 'Total TX (per packet)', crc };
+  return { rx: `RX on ${radioScope.value}`, tx: `Transmissions on ${radioScope.value}`, crc };
+});
 
 // Aggregate data into buckets - ~72 buckets regardless of time range
 const aggregateToBuckets = (data: Array<[number, number]>, hours: number) => {
@@ -256,9 +288,9 @@ const sparklineData = computed(() => {
   let rxSparkline: number[] = [];
   let txSparkline: number[] = [];
 
-  if (metricsData.value?.series) {
-    const rxSeries = metricsData.value.series.find((s) => s.type === 'rx_count');
-    const txSeries = metricsData.value.series.find((s) => s.type === 'tx_count');
+  if (chartMetrics.value?.series) {
+    const rxSeries = chartMetrics.value.series.find((s) => s.type === 'rx_count');
+    const txSeries = chartMetrics.value.series.find((s) => s.type === 'tx_count');
 
     if (rxSeries?.data) {
       rxSparkline = aggregateToBuckets(
@@ -295,14 +327,10 @@ const fetchAllData = async () => {
     isLoading.value = true;
     error.value = null;
 
-    const statsResponse = await streamingGet<{ total_packets?: number; transmitted_packets?: number }>(
-      '/packet_stats',
-      { hours: selectedHours.value },
-    );
-    topStats.value = {
-      totalRx: statsResponse.data?.total_packets || 0,
-      totalTx: statsResponse.data?.transmitted_packets || 0,
-    };
+    const statsResponse = await streamingGet<PacketStatsPayload>('/packet_stats', {
+      hours: selectedHours.value,
+    });
+    packetStatsData.value = statsResponse.data ?? null;
 
     isLoading.value = false;
   } catch (err) {
@@ -354,22 +382,35 @@ const loadMetricsData = async () => {
   chartStatus.packetRate = 'Connecting...';
   packetRateChartError.value = null;
   try {
-    const response = await streamingGet('/metrics_graph_data', {
-      hours: selectedHours.value,
-      resolution: 'average',
-      metrics: 'rx_count,tx_count',
-    }, {
-      onPhaseChange: (phase) => {
-        chartStatus.packetRate = phase === 'receiving' ? 'Receiving data...' : 'Connecting...';
-      },
-    });
+    const hours = selectedHours.value;
+    // The RRD holds one combined series; a multi-radio node also needs each radio's counts.
+    const ratesRequest = isMultiRadio.value
+      ? streamingGet<RadioPacketRatesPayload>('/radio_packet_rates', {
+          hours,
+          bucket_seconds: rateBucketSeconds(hours),
+        })
+      : Promise.resolve(null);
+    const [response, ratesResponse] = await Promise.all([
+      streamingGet('/metrics_graph_data', {
+        hours,
+        resolution: 'average',
+        metrics: 'rx_count,tx_count',
+      }, {
+        onPhaseChange: (phase) => {
+          chartStatus.packetRate = phase === 'receiving' ? 'Receiving data...' : 'Connecting...';
+        },
+      }),
+      ratesRequest,
+    ]);
 
     if (response?.success) {
       metricsData.value = response.data as MetricsData;
     }
+    radioRatesData.value = ratesResponse?.success ? (ratesResponse.data ?? null) : null;
   } catch (err) {
     packetRateChartError.value = err instanceof Error ? err.message : 'Failed to load';
     metricsData.value = null;
+    radioRatesData.value = null;
   } finally {
     chartLoadingStates.value.packetRate = false;
     chartLoadingStates.value.sparklineMetrics = false;
@@ -391,7 +432,7 @@ const loadRouteStatsData = async () => {
     });
 
     if (response?.success && response.data) {
-      routeStatsData.value = response.data as RouteStatsData;
+      routeStatsData.value = response.data as RouteStatsPayload;
     }
   } catch (err) {
     routeStatsData.value = null;
@@ -532,9 +573,9 @@ const createOrUpdatePacketRateChart = () => {
   let rxData: Array<{ x: number; y: number }> = [];
   let txData: Array<{ x: number; y: number }> = [];
 
-  if (metricsData.value?.series) {
-    const rxSeries = metricsData.value.series.find((s) => s.type === 'rx_count');
-    const txSeries = metricsData.value.series.find((s) => s.type === 'tx_count');
+  if (chartMetrics.value?.series) {
+    const rxSeries = chartMetrics.value.series.find((s) => s.type === 'rx_count');
+    const txSeries = chartMetrics.value.series.find((s) => s.type === 'tx_count');
 
     if (rxSeries?.data) {
       rxData = rxSeries.data.map(([timestamp, value]) => {
@@ -925,6 +966,17 @@ const createOrUpdateSignalMetricsChart = () => {
 };
 
 
+// Switching radios reuses the data already loaded; only the chart has to redraw.
+watch(radioScope, async () => {
+  await nextTick();
+  createOrUpdatePacketRateChart();
+});
+
+// /stats can arrive after the first load; fetch per-radio counts once radios are known.
+watch(isMultiRadio, (multi) => {
+  if (multi && !radioRatesData.value) void loadMetricsData();
+});
+
 onMounted(async () => {
   // Use Vue's nextTick to ensure DOM and refs are fully ready
   await nextTick();
@@ -958,25 +1010,29 @@ onBeforeUnmount(() => {
         Statistics
       </h1>
 
-      <!-- Time Range Selector -->
-      <div class="flex items-center gap-2 sm:gap-3">
-        <label class="text-content-secondary dark:text-content-muted text-ui-caption sm:text-ui-label"
-          >Time Range:</label
-        >
-        <select
-          v-model="selectedHours"
-          @change="onTimeRangeChange"
-          class="modal-select w-auto"
-        >
-          <option
-            v-for="option in timeOptions"
-            :key="option.value"
-            :value="option.value"
-            class="bg-surface text-content-primary"
+      <div class="flex flex-wrap items-center gap-3 sm:gap-4">
+        <RadioScopeSelector v-model="radioScope" :radios="radioProfiles" />
+
+        <!-- Time Range Selector -->
+        <div class="flex items-center gap-2 sm:gap-3">
+          <label class="text-content-secondary dark:text-content-muted text-ui-caption sm:text-ui-label"
+            >Time Range:</label
           >
-            {{ option.label }}
-          </option>
-        </select>
+          <select
+            v-model="selectedHours"
+            @change="onTimeRangeChange"
+            class="modal-select w-auto"
+          >
+            <option
+              v-for="option in timeOptions"
+              :key="option.value"
+              :value="option.value"
+              class="bg-surface text-content-primary"
+            >
+              {{ option.label }}
+            </option>
+          </select>
+        </div>
       </div>
     </div>
 
@@ -984,7 +1040,7 @@ onBeforeUnmount(() => {
     <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
       <!-- Total RX -->
       <SparklineChart
-        title="Total RX"
+        :title="cardTitles.rx"
         :value="topStats.totalRx"
         :color="CHART_COLORS.totalRx"
         :data="sparklineData.totalPackets"
@@ -996,7 +1052,7 @@ onBeforeUnmount(() => {
 
       <!-- Total TX -->
       <SparklineChart
-        title="Total TX"
+        :title="cardTitles.tx"
         :value="topStats.totalTx"
         :color="CHART_COLORS.totalTx"
         :data="sparklineData.transmittedPackets"
@@ -1008,7 +1064,7 @@ onBeforeUnmount(() => {
 
       <!-- CRC Errors -->
       <SparklineChart
-        title="CRC Errors"
+        :title="cardTitles.crc"
         :value="crcErrorData.reduce((sum, d) => sum + d.count, 0)"
         :color="CHART_COLORS.crcErrors"
         :data="sparklineData.crcErrors"
@@ -1019,6 +1075,15 @@ onBeforeUnmount(() => {
       />
 
     </div>
+
+    <p
+      v-if="radioScope !== ALL_RADIOS && (unattributedCounts.rx > 0 || unattributedCounts.tx > 0)"
+      class="text-xs text-content-muted -mt-2"
+      data-testid="unattributed-note"
+    >
+      {{ unattributedCounts.rx }} receptions and {{ unattributedCounts.tx }} transmissions in this
+      window have no recorded radio, so they are not counted for {{ radioScope }}.
+    </p>
 
     <!-- Performance Metrics Section -->
     <div class="glass-card rounded-[15px] p-3 sm:p-6">
@@ -1033,7 +1098,7 @@ onBeforeUnmount(() => {
         <p
           class="text-content-secondary dark:text-content-muted text-ui-caption sm:text-ui-label uppercase tracking-wide mb-2"
         >
-          Packet Rate (RX/TX PER HOUR)
+          Packet Rate (RX/TX PER HOUR)<template v-if="radioScope !== ALL_RADIOS"> · {{ radioScope }}</template>
         </p>
         <div class="flex items-center gap-3 sm:gap-6 mb-3 sm:mb-4">
           <div class="flex items-center gap-2">
@@ -1066,6 +1131,13 @@ onBeforeUnmount(() => {
         >
           Noise Floor Over Time
         </h3>
+        <p
+          v-if="isMultiRadio"
+          class="text-xs text-content-muted -mt-2 mb-3"
+          data-testid="noise-floor-radio-note"
+        >
+          Measured on the default radio ({{ defaultRadioId }}).
+        </p>
         <ChartCard
           class="flex-1 min-h-[12rem] sm:min-h-[16rem] rounded-lg"
           :is-loading="chartLoadingStates.noiseFloor"
@@ -1084,6 +1156,9 @@ onBeforeUnmount(() => {
         >
           Route Distribution
         </h3>
+        <p v-if="radioScope !== ALL_RADIOS" class="text-xs text-content-muted -mt-2 mb-3">
+          Receptions on {{ radioScope }}.
+        </p>
         <ChartCard
           class="flex-1 flex flex-col justify-evenly min-h-[8rem]"
           :is-loading="chartLoadingStates.routePie"
@@ -1091,9 +1166,9 @@ onBeforeUnmount(() => {
           :status="chartStatus.routePie"
           @retry="() => { chartLoadingStates.routePie = true; routePieChartError = null; void loadRouteStatsData(); }"
         >
-          <template v-if="routeStatsData?.route_totals">
+          <template v-if="displayedRouteTotals">
             <div
-              v-for="(count, route, index) in routeStatsData.route_totals"
+              v-for="(count, route, index) in displayedRouteTotals"
               :key="route"
               class="flex items-center gap-3"
             >
@@ -1106,7 +1181,7 @@ onBeforeUnmount(() => {
                 <div
                   class="h-full rounded transition-all duration-300"
                   :style="{
-                    width: `${(count / Math.max(...Object.values(routeStatsData.route_totals))) * 100}%`,
+                    width: `${(count / Math.max(...Object.values(displayedRouteTotals))) * 100}%`,
                     backgroundColor: CHART_COLORS.routes[index % CHART_COLORS.routes.length],
                   }"
                 ></div>

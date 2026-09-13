@@ -1984,7 +1984,7 @@ onBeforeUnmount(() => {
         >
           This node has {{ radioProfiles.length }} radios. Noise floor and CRC errors are measured on
           the default radio ({{ defaultRadioId }}), packet counts cover every radio, and LBT figures
-          describe the first radio that sent each packet.
+          are recorded for one radio per packet rather than for each radio that tried to send it.
         </p>
       </div>
    

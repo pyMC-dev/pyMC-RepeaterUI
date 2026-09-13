@@ -5,7 +5,8 @@
  * radio is identified and labelled the same way on the Dashboard airtime card,
  * Statistics, Neighbour Links and RF Health.
  */
-import { computed, ref } from 'vue';
+import { computed, inject, ref } from 'vue';
+import { routeLocationKey, routerKey } from 'vue-router';
 import { useMultiRadioConfig } from '@/composables/useMultiRadioConfig';
 import { useSystemStore } from '@/stores/system';
 
@@ -164,20 +165,36 @@ export function useRadioProfiles() {
 /**
  * The radio scope a view shows: every radio combined, or one radio. Always All
  * radios on a single-radio node, and falls back to All radios when the selected
- * radio is no longer configured.
+ * radio is no longer configured. Kept in `?radio=` when the app has a router, so
+ * a reload, a shared link or the back button keeps the radio.
  */
 export function useRadioScope() {
   const radioProfiles = useRadioProfiles();
-  const selected = ref<string>(ALL_RADIOS);
+  const route = inject(routeLocationKey, null);
+  const router = inject(routerKey, null);
+  const localSelection = ref<string>(ALL_RADIOS);
+
+  const requested = computed(() => {
+    if (!route || !router) return localSelection.value;
+    const value = route.query.radio;
+    return typeof value === 'string' && value ? value : ALL_RADIOS;
+  });
 
   const scope = computed<string>({
     get() {
       if (!radioProfiles.isMultiRadio.value) return ALL_RADIOS;
       const ids = radioProfiles.profiles.value.map((entry) => entry.radioId);
-      return ids.includes(selected.value) ? selected.value : ALL_RADIOS;
+      return ids.includes(requested.value) ? requested.value : ALL_RADIOS;
     },
     set(value) {
-      selected.value = value;
+      if (!route || !router) {
+        localSelection.value = value;
+        return;
+      }
+      const query = { ...route.query };
+      if (value === ALL_RADIOS) delete query.radio;
+      else query.radio = value;
+      void router.replace({ query });
     },
   });
 

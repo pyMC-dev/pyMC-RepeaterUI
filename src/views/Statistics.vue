@@ -186,6 +186,7 @@ const timeOptions = [
 const metricsData = ref<MetricsData | null>(null);
 // Per-radio counts from /radio_packet_rates; fetched only on a multi-radio node.
 const radioRatesData = ref<RadioPacketRatesPayload | null>(null);
+const radioRatesError = ref<string | null>(null);
 const noiseFloorData = ref<NoiseFloorData | null>(null);
 const routeStatsData = ref<RouteStatsPayload | null>(null);
 const signalMetricsHistory = ref<SignalMetrics[]>([]);
@@ -256,8 +257,8 @@ const cardTitles = computed(() => {
 const aggregateToBuckets = (data: Array<[number, number]>, hours: number) => {
   if (data.length === 0) return [];
 
-  const TARGET_BUCKETS = 72;
-  const BUCKET_MS = Math.round((hours * 60 * 60 * 1000) / TARGET_BUCKETS);
+  // ~72 whole-minute buckets, on the same grid as the server's per-radio counts.
+  const BUCKET_MS = rateBucketSeconds(hours) * 1000;
   const buckets = new Map<number, number[]>();
 
   data.forEach(([timestamp, value]) => {
@@ -378,46 +379,67 @@ const loadChartData = async () => {
   void loadCrcErrorData();
 };
 
+// Each load bumps this. A response from an older load is dropped rather than
+// overwriting a newer one: the radio list can arrive while a load is in flight.
+let metricsLoadGeneration = 0;
+
 const loadMetricsData = async () => {
+  const generation = ++metricsLoadGeneration;
   chartStatus.packetRate = 'Connecting...';
   packetRateChartError.value = null;
-  try {
-    const hours = selectedHours.value;
-    // The RRD holds one combined series; a multi-radio node also needs each radio's counts.
-    const ratesRequest = isMultiRadio.value
+  const hours = selectedHours.value;
+  const wantsRates = isMultiRadio.value;
+
+  // The RRD holds one combined series; a multi-radio node also needs each radio's
+  // counts. Settled separately, so a failed per-radio request never blanks the
+  // combined chart.
+  const [metricsResult, ratesResult] = await Promise.allSettled([
+    streamingGet('/metrics_graph_data', {
+      hours,
+      resolution: 'average',
+      metrics: 'rx_count,tx_count',
+    }, {
+      onPhaseChange: (phase) => {
+        chartStatus.packetRate = phase === 'receiving' ? 'Receiving data...' : 'Connecting...';
+      },
+    }),
+    wantsRates
       ? streamingGet<RadioPacketRatesPayload>('/radio_packet_rates', {
           hours,
           bucket_seconds: rateBucketSeconds(hours),
         })
-      : Promise.resolve(null);
-    const [response, ratesResponse] = await Promise.all([
-      streamingGet('/metrics_graph_data', {
-        hours,
-        resolution: 'average',
-        metrics: 'rx_count,tx_count',
-      }, {
-        onPhaseChange: (phase) => {
-          chartStatus.packetRate = phase === 'receiving' ? 'Receiving data...' : 'Connecting...';
-        },
-      }),
-      ratesRequest,
-    ]);
+      : Promise.resolve(null),
+  ]);
+  if (generation !== metricsLoadGeneration) return;
 
-    if (response?.success) {
-      metricsData.value = response.data as MetricsData;
+  if (metricsResult.status === 'fulfilled') {
+    if (metricsResult.value?.success) {
+      metricsData.value = metricsResult.value.data as MetricsData;
     }
-    radioRatesData.value = ratesResponse?.success ? (ratesResponse.data ?? null) : null;
-  } catch (err) {
-    packetRateChartError.value = err instanceof Error ? err.message : 'Failed to load';
+  } else {
+    const reason = metricsResult.reason;
+    packetRateChartError.value = reason instanceof Error ? reason.message : 'Failed to load';
     metricsData.value = null;
+  }
+
+  if (!wantsRates) {
     radioRatesData.value = null;
-  } finally {
-    chartLoadingStates.value.packetRate = false;
-    chartLoadingStates.value.sparklineMetrics = false;
-    if (!packetRateChartError.value) {
-      await nextTick();
-      createOrUpdatePacketRateChart();
-    }
+    radioRatesError.value = null;
+  } else if (ratesResult.status === 'fulfilled' && ratesResult.value?.success) {
+    radioRatesData.value = ratesResult.value.data ?? null;
+    radioRatesError.value = null;
+  } else {
+    const reason = ratesResult.status === 'rejected' ? ratesResult.reason : null;
+    radioRatesData.value = null;
+    radioRatesError.value =
+      reason instanceof Error ? reason.message : 'Per-radio packet counts are unavailable';
+  }
+
+  chartLoadingStates.value.packetRate = false;
+  chartLoadingStates.value.sparklineMetrics = false;
+  if (!packetRateChartError.value) {
+    await nextTick();
+    createOrUpdatePacketRateChart();
   }
 };
 
@@ -611,7 +633,10 @@ const createOrUpdatePacketRateChart = () => {
 
   // Check if we have data
   if (rxData.length === 0 && txData.length === 0) {
-    packetRateChartError.value = 'No data available for the selected time range';
+    packetRateChartError.value =
+      radioScope.value !== ALL_RADIOS && radioRatesError.value
+        ? radioRatesError.value
+        : 'No data available for the selected time range';
     return;
   }
 
@@ -623,9 +648,8 @@ const createOrUpdatePacketRateChart = () => {
     packetRateChart.value = null;
   }
 
-  // Dynamic bucket size: maintain ~72 buckets regardless of time range (6hr/5min ratio)
-  const TARGET_BUCKETS = 72;
-  const BUCKET_MS = Math.round((selectedHours.value * 60 * 60 * 1000) / TARGET_BUCKETS);
+  // ~72 whole-minute buckets for any range, on the same grid as the server's per-radio counts.
+  const BUCKET_MS = rateBucketSeconds(selectedHours.value) * 1000;
 
   const aggregateToBuckets = (data: Array<{ x: number; y: number }>) => {
     if (data.length === 0) return [];

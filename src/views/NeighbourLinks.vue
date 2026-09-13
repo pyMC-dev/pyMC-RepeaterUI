@@ -12,6 +12,7 @@ import {
   Legend,
   Title,
   type ChartDataset,
+  type PointStyle,
 } from 'chart.js';
 import 'chartjs-adapter-date-fns';
 import ChartCard from '@/components/ui/ChartCard.vue';
@@ -301,7 +302,12 @@ async function fetchLinks() {
   }
 }
 
+// Each request bumps this. A response from an older one (another link, radio or
+// window) is dropped instead of replacing what is now selected.
+let historyGeneration = 0;
+
 async function fetchHistory() {
+  const generation = ++historyGeneration;
   const link = selectedLink.value;
   if (!link) {
     historyRows.value = [];
@@ -325,6 +331,8 @@ async function fetchHistory() {
       ...(radioScope.value !== ALL_RADIOS ? { radio_id: radioScope.value } : {}),
     });
 
+    if (generation !== historyGeneration) return;
+
     if (!response.success || !response.data) {
       throw new Error(response.error || 'Failed to load link history');
     }
@@ -334,13 +342,16 @@ async function fetchHistory() {
     historyLoadedOnce.value = true;
     historyError.value = null;
   } catch (error) {
+    if (generation !== historyGeneration) return;
     historyError.value = error instanceof Error ? error.message : 'Failed to load link history';
     if (!historyLoadedOnce.value) {
       historyRows.value = [];
     }
   } finally {
-    historyLoading.value = false;
-    historyRefreshing.value = false;
+    if (generation === historyGeneration) {
+      historyLoading.value = false;
+      historyRefreshing.value = false;
+    }
   }
 }
 
@@ -456,34 +467,56 @@ function buildHistoryDatasets(
     tension: 0.2,
   });
 
-  // Under All radios on a bridge, one first-seen line per radio that heard the peer.
+  const duplicateColor = cssVar('--color-accent-red', '#ef4444');
+  const duplicateScatter = (
+    data: HistoryChartPoint[],
+    scatterLabel: string,
+    pointStyle?: PointStyle,
+  ) => ({
+    type: 'scatter' as const,
+    label: scatterLabel,
+    data,
+    borderColor: duplicateColor,
+    backgroundColor: duplicateColor,
+    pointRadius: 3,
+    pointHoverRadius: 5,
+    ...(pointStyle ? { pointStyle } : {}),
+  });
+
+  if (!isMultiRadio.value || radioScope.value !== ALL_RADIOS) {
+    return [
+      firstSeenLine(uniquePoints, `${label} (first-seen)`, color),
+      duplicateScatter(duplicatePoints, `${label} (duplicate)`),
+    ];
+  }
+
+  // Under All radios on a bridge, one series per radio for both kinds of sample. A
+  // radio keeps its line colour and duplicate marker across both.
+  const radioOrder = radioProfiles.value.map((radio) => radio.radioId);
+  const slot = (radioId: string | null) => {
+    const index = radioId === null ? -1 : radioOrder.indexOf(radioId);
+    return index >= 0 ? index : radioOrder.length;
+  };
   const palette = [
     color,
     cssVar('--openhop-purple-light', '#a78bfa'),
     cssVar('--color-accent-cyan', '#06b6d4'),
     cssVar('--color-accent-green', '#10b981'),
   ];
-  const firstSeen = isMultiRadio.value && radioScope.value === ALL_RADIOS
-    ? groupRowsByRadio(uniquePoints, radioProfiles.value.map((radio) => radio.radioId)).map(
-      (group, index) => firstSeenLine(
-        group.rows,
-        `${label} (first-seen, ${group.radioId ?? 'no radio'})`,
-        palette[index % palette.length],
-      ),
-    )
-    : [firstSeenLine(uniquePoints, `${label} (first-seen)`, color)];
+  const markers: PointStyle[] = ['circle', 'triangle', 'rectRot', 'star'];
+  const radioName = (radioId: string | null) => radioId ?? 'no radio';
 
   return [
-    ...firstSeen,
-    {
-      type: 'scatter',
-      label: `${label} (duplicate)`,
-      data: duplicatePoints,
-      borderColor: cssVar('--color-accent-red', '#ef4444'),
-      backgroundColor: cssVar('--color-accent-red', '#ef4444'),
-      pointRadius: 3,
-      pointHoverRadius: 5,
-    },
+    ...groupRowsByRadio(uniquePoints, radioOrder).map((group) => firstSeenLine(
+      group.rows,
+      `${label} (first-seen, ${radioName(group.radioId)})`,
+      palette[slot(group.radioId) % palette.length],
+    )),
+    ...groupRowsByRadio(duplicatePoints, radioOrder).map((group) => duplicateScatter(
+      group.rows,
+      `${label} (duplicate, ${radioName(group.radioId)})`,
+      markers[slot(group.radioId) % markers.length],
+    )),
   ];
 }
 

@@ -1,6 +1,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { mount, flushPromises } from '@vue/test-utils';
 import { createPinia, setActivePinia } from 'pinia';
+import { defineComponent, h } from 'vue';
+import { createMemoryHistory, createRouter } from 'vue-router';
 
 vi.mock('chart.js', () => {
   class FakeChart {
@@ -47,7 +49,7 @@ import { streamingGet } from '@/utils/streamingFetch';
 import { useSystemStore } from '@/stores/system';
 import { useAppRuntimeStore } from '@/stores/appRuntime';
 import RadioScopeSelector from '@/components/ui/RadioScopeSelector.vue';
-import { ALL_RADIOS } from '@/composables/useRadioProfiles';
+import { ALL_RADIOS, useRadioScope } from '@/composables/useRadioProfiles';
 import NeighbourLinks from '@/views/NeighbourLinks.vue';
 import Statistics from '@/views/Statistics.vue';
 import {
@@ -210,26 +212,100 @@ describe('RadioScopeSelector', () => {
 });
 
 // ---------------------------------------------------------------------------
+// Radio scope in the URL
+// ---------------------------------------------------------------------------
+
+describe('radio scope in the URL', () => {
+  const Probe = defineComponent({
+    setup(_, { expose }) {
+      const { scope } = useRadioScope();
+      expose({ scope });
+      return () => h('span', scope.value);
+    },
+  });
+
+  async function mountWithRouter(path: string) {
+    const pinia = seedPinia(BRIDGE_STATS);
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [{ path: '/statistics', component: Probe }],
+    });
+    await router.push(path);
+    await router.isReady();
+    const wrapper = mount(Probe, { global: { plugins: [pinia, router] } });
+    return { wrapper, router, vm: wrapper.vm as unknown as { scope: string } };
+  }
+
+  it('reads the radio from ?radio= and writes changes back', async () => {
+    const { wrapper, router, vm } = await mountWithRouter('/statistics?radio=south');
+    expect(wrapper.text()).toBe('south');
+
+    vm.scope = 'north';
+    await flushPromises();
+    expect(router.currentRoute.value.query.radio).toBe('north');
+    expect(wrapper.text()).toBe('north');
+
+    vm.scope = ALL_RADIOS;
+    await flushPromises();
+    expect(router.currentRoute.value.query).not.toHaveProperty('radio');
+    expect(wrapper.text()).toBe(ALL_RADIOS);
+  });
+
+  it('shows All radios for a radio this node does not have', async () => {
+    const { wrapper } = await mountWithRouter('/statistics?radio=gone');
+    expect(wrapper.text()).toBe(ALL_RADIOS);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Statistics
 // ---------------------------------------------------------------------------
 
+const statCard = {
+  props: ['title', 'value', 'data'],
+  template:
+    '<div data-testid="stat-card" :data-points="(data || []).length">{{ title }}={{ value }}</div>',
+};
 const statStubs = {
-  SparklineChart: { props: ['title', 'value'], template: '<div data-testid="stat-card">{{ title }}={{ value }}</div>' },
-  Sparkline: { props: ['title', 'value'], template: '<div data-testid="stat-card">{{ title }}={{ value }}</div>' },
+  SparklineChart: statCard,
+  Sparkline: statCard,
   ChartCard: { template: '<div><slot /></div>' },
 };
 
+function endpointData(endpoint: string): unknown {
+  const now = Math.floor(Date.now() / 1000);
+  const bucket = Math.floor(now / 1200) * 1200 - 1200;
+  const data: Record<string, unknown> = {
+    '/packet_stats': PACKET_STATS,
+    '/route_stats': ROUTE_STATS,
+    '/radio_packet_rates': {
+      hours: 24,
+      bucket_seconds: 1200,
+      radios: [
+        { radio_id: 'north', rx_total: 5, tx_total: 2, buckets: [{ timestamp: bucket, rx_count: 5, tx_count: 2 }] },
+        { radio_id: 'south', rx_total: 3, tx_total: 2, buckets: [{ timestamp: bucket, rx_count: 3, tx_count: 2 }] },
+      ],
+      unattributed_rx_count: 0,
+      unattributed_tx_count: 0,
+    },
+    '/metrics_graph_data': {
+      series: [
+        { name: 'Received Packets', type: 'rx_count', data: [[now - 600, 0.01], [now - 300, 0.02]] },
+        { name: 'Transmitted Packets', type: 'tx_count', data: [[now - 600, 0.01], [now - 300, 0.01]] },
+      ],
+    },
+  };
+  return data[endpoint] ?? { history: [] };
+}
+
 function respondByEndpoint() {
   mockedGet.mockImplementation(async (endpoint: string) => {
-    const data: Record<string, unknown> = {
-      '/packet_stats': PACKET_STATS,
-      '/route_stats': ROUTE_STATS,
-      '/radio_packet_rates': { hours: 24, bucket_seconds: 1200, radios: [], unattributed_rx_count: 0, unattributed_tx_count: 0 },
-      '/metrics_graph_data': { series: [] },
-    };
-    return { success: true, data: data[endpoint] ?? { history: [] } } as never;
+    return { success: true, data: endpointData(endpoint) } as never;
   });
 }
+
+const rxCardPoints = (wrapper: ReturnType<typeof mount>) =>
+  Number(wrapper.findAll('[data-testid="stat-card"]')[0].attributes('data-points'));
 
 async function mountStatistics(stats: Record<string, unknown>) {
   const pinia = seedPinia(stats);
@@ -268,6 +344,57 @@ describe('Statistics per radio', () => {
     await mountStatistics(BRIDGE_STATS);
 
     expect(mockedGet).toHaveBeenCalledWith('/radio_packet_rates', { hours: 24, bucket_seconds: 1200 });
+  });
+
+  it('keeps the combined chart when the per-radio request fails', async () => {
+    mockedGet.mockImplementation(async (endpoint: string) => {
+      if (endpoint === '/radio_packet_rates') throw new Error('Connection timeout');
+      return { success: true, data: endpointData(endpoint) } as never;
+    });
+    const wrapper = await mountStatistics(BRIDGE_STATS);
+
+    expect(rxCardPoints(wrapper)).toBeGreaterThan(0);
+
+    await wrapper.get('[data-testid="radio-scope-south"]').trigger('click');
+    await flushPromises();
+    expect(rxCardPoints(wrapper)).toBe(0);
+  });
+
+  it('keeps per-radio counts when an older load finishes last', async () => {
+    const pending: Array<{ endpoint: string; resolve: () => void }> = [];
+    mockedGet.mockImplementation((endpoint: string) => {
+      const response = { success: true, data: endpointData(endpoint) };
+      if (endpoint !== '/metrics_graph_data' && endpoint !== '/radio_packet_rates') {
+        return Promise.resolve(response) as never;
+      }
+      return new Promise((resolve) => {
+        pending.push({ endpoint, resolve: () => resolve(response) });
+      }) as never;
+    });
+
+    const pinia = seedPinia(SINGLE_STATS);
+    const wrapper = mount(Statistics, { global: { plugins: [pinia], stubs: statStubs } });
+    await flushPromises();
+    expect(pending.map((p) => p.endpoint)).toEqual(['/metrics_graph_data']);
+
+    // The radio list arrives while the first, single-radio load is still out.
+    useSystemStore().stats = BRIDGE_STATS as never;
+    await flushPromises();
+    expect(pending.map((p) => p.endpoint)).toEqual([
+      '/metrics_graph_data',
+      '/metrics_graph_data',
+      '/radio_packet_rates',
+    ]);
+
+    pending[1].resolve();
+    pending[2].resolve();
+    await flushPromises();
+    pending[0].resolve();
+    await flushPromises();
+
+    await wrapper.get('[data-testid="radio-scope-south"]').trigger('click');
+    await flushPromises();
+    expect(rxCardPoints(wrapper)).toBeGreaterThan(0);
   });
 
   it('leaves a single-radio node as it was', async () => {
@@ -382,6 +509,47 @@ describe('Neighbour Links per radio', () => {
 
     const calls = vi.mocked(ApiService.getNeighborLinkHistory).mock.calls;
     expect(calls[calls.length - 1][0]).toMatchObject({ peer_hash: 'AB12', radio_id: 'south' });
+  });
+
+  it('ignores a history response that arrives after the radio changed', async () => {
+    const historyResponse = (scores: number[]) => ({
+      success: true,
+      data: {
+        peer_hash: 'AB12',
+        path_hash_size: 1,
+        hours: 24,
+        limit: 1000,
+        rows: scores.map((score, index) => ({
+          timestamp: 1_700_000_000 + index * 20,
+          rssi: -90,
+          snr: 5,
+          score,
+          is_duplicate: false,
+          packet_hash: `h${index}`,
+          packet_type: 1,
+          route_type: 1,
+          path_hop_count: 1,
+        })),
+        count: scores.length,
+      },
+    });
+    const stale: Array<() => void> = [];
+    vi.mocked(ApiService.getNeighborLinkHistory).mockImplementation((params) => {
+      if ((params as { radio_id?: string }).radio_id === 'south') {
+        return Promise.resolve(historyResponse([0.8, 0.79, 0.81, 0.8, 0.8, 0.79, 0.81, 0.8, 0.8])) as never;
+      }
+      return new Promise((resolve) => stale.push(() => resolve(historyResponse([0.2, 0.9])))) as never;
+    });
+
+    const wrapper = await mountNeighbourLinks(BRIDGE_STATS);
+    await wrapper.get('[data-testid="radio-scope-south"]').trigger('click');
+    await flushPromises();
+    expect(wrapper.get('[data-testid="stability-status"]').text()).toBe('Low variation');
+
+    expect(stale.length).toBeGreaterThan(0);
+    stale.forEach((resolve) => resolve());
+    await flushPromises();
+    expect(wrapper.get('[data-testid="stability-status"]').text()).toBe('Low variation');
   });
 
   it('adds no radio column on a single-radio node', async () => {

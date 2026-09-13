@@ -100,6 +100,21 @@ export interface RadioPacketRateBucket {
   tx_count?: number;
 }
 
+export interface NoiseFloorSample {
+  timestamp?: number;
+  noise_floor_dbm?: number;
+  /** The radio this sample was read from. Present only on a node with two or more radios; null there for a sample stored before per-radio sampling or read from a radio that is no longer configured. */
+  radio_id?: string | null;
+}
+
+export interface CrcErrorSample {
+  timestamp?: number;
+  /** Errors counted since the previous sample of this radio. */
+  count?: number;
+  /** The radio whose counter these errors came from. Present only on a node with two or more radios. */
+  radio_id?: string | null;
+}
+
 export interface RadioPacketRateSeries {
   radio_id?: string;
   rx_total?: number;
@@ -245,6 +260,16 @@ export interface LbtDiagnosticsResponse {
   packet_type_buckets: LbtPacketTypeBucket[];
   correlations: LbtCorrelationSet;
   limitations: string[];
+  /** Present only on a node with two or more radios. One entry per configured radio, counting physical transmissions from the packet_egress table, so a packet fanned out across a bridge is counted on each radio it left by and a send that failed on one radio is counted there. The combined summary and buckets above are unchanged and still count each packet once. Per-radio entries carry no rf block (the RRD series behind it is node-wide) and no packet-type breakdown. */
+  radios?: LbtRadioSeries[];
+  /** Physical sends whose radio is no longer configured. Present alongside radios; counted here rather than blamed on another radio's contention. */
+  unattributed_transmissions?: number;
+}
+
+export interface LbtRadioSeries {
+  radio_id: string;
+  summary: LbtSummary;
+  buckets: LbtBucket[];
 }
 
 export interface LbtPacketTypeSummary {
@@ -2107,7 +2132,7 @@ export class Api<
   };
   lbtDiagnostics = {
     /**
-     * @description Returns aggregated Listen Before Talk (LBT) diagnostics for transmission-path packets, aligned to RF health buckets for correlation analysis. Notes: - LBT total attempts are derived as `lbt_attempts + 1` from stored packet metadata. - Buckets are bounded and aggregated server-side for efficient dashboard refresh.
+     * @description Returns aggregated Listen Before Talk (LBT) diagnostics for transmission-path packets, aligned to RF health buckets for correlation analysis. Notes: - LBT total attempts are derived as `lbt_attempts + 1` from stored packet metadata. - Buckets are bounded and aggregated server-side for efficient dashboard refresh. - On a node with two or more radios the response also carries `radios`, the same summary and bucket shape per radio, counting physical transmissions.
      *
      * @tags Charts
      * @name LbtDiagnosticsList
@@ -2165,7 +2190,7 @@ export class Api<
   };
   noiseFloorHistory = {
     /**
-     * @description Retrieve historical noise floor measurements
+     * @description Historical noise floor measurements, oldest first. On a node with two or more radios every sample names the radio it was read from, and radio_id pages that radio's samples on their own; offset paging over the combined series is stable only while nothing is filtered out. Samples stored before per-radio sampling, and every sample on a single-radio node, carry no radio id.
      *
      * @tags Noise Floor
      * @name NoiseFloorHistoryList
@@ -2181,13 +2206,34 @@ export class Api<
          * @default 24
          */
         hours?: number;
+        /**
+         * Maximum samples to return. Defaults to 300 per hour, at least 2000.
+         * @min 1
+         * @max 1000000
+         */
+        limit?: number;
+        /**
+         * @min 0
+         * @default 0
+         */
+        offset?: number;
+        /** Return only samples read from this radio. */
+        radio_id?: string;
       },
       params: RequestParams = {},
     ) =>
       this.request<
         {
           success?: boolean;
-          data?: object[];
+          data?: {
+            history?: NoiseFloorSample[];
+            hours?: number;
+            count?: number;
+            limit?: number;
+            offset?: number;
+            /** Echoed back only when the request named a radio. */
+            radio_id?: string;
+          };
         },
         any
       >({
@@ -2200,7 +2246,7 @@ export class Api<
   };
   noiseFloorStats = {
     /**
-     * @description Statistical analysis of noise floor measurements
+     * @description Statistical analysis of noise floor measurements. Without radio_id on a node with two or more radios this averages two receivers on two bands, which describes neither; name a radio there.
      *
      * @tags Noise Floor
      * @name NoiseFloorStatsList
@@ -2214,6 +2260,8 @@ export class Api<
          * @default 24
          */
         hours?: number;
+        /** Summarise only samples read from this radio. */
+        radio_id?: string;
       },
       params: RequestParams = {},
     ) =>
@@ -2221,10 +2269,16 @@ export class Api<
         {
           success?: boolean;
           data?: {
-            min?: number;
-            max?: number;
-            avg?: number;
-            current?: number;
+            stats?: {
+              measurement_count?: number;
+              avg_noise_floor?: number;
+              min_noise_floor?: number;
+              max_noise_floor?: number;
+              hours?: number;
+            };
+            hours?: number;
+            /** Echoed back only when the request named a radio. */
+            radio_id?: string;
           };
         },
         any
@@ -4483,7 +4537,7 @@ export class Api<
   };
   crcErrorCount = {
     /**
-     * No description
+     * @description Total CRC errors in the window. radio_id narrows it to one radio's counter; errors recorded before per-radio sampling carry no radio id and are counted only by the unfiltered call.
      *
      * @tags System
      * @name CrcErrorCountList
@@ -4494,10 +4548,23 @@ export class Api<
       query?: {
         /** @default 24 */
         hours?: number;
+        /** Count only errors from this radio's counter. */
+        radio_id?: string;
       },
       params: RequestParams = {},
     ) =>
-      this.request<object, any>({
+      this.request<
+        {
+          success?: boolean;
+          data?: {
+            crc_error_count?: number;
+            hours?: number;
+            /** Echoed back only when the request named a radio. */
+            radio_id?: string;
+          };
+        },
+        any
+      >({
         path: `/crc_error_count`,
         method: "GET",
         query: query,
@@ -4507,7 +4574,7 @@ export class Api<
   };
   crcErrorHistory = {
     /**
-     * No description
+     * @description CRC error batches in the window, oldest first. On a node with two or more radios every batch names the radio whose counter it came from.
      *
      * @tags System
      * @name CrcErrorHistoryList
@@ -4519,10 +4586,24 @@ export class Api<
         /** @default 24 */
         hours?: number;
         limit?: number;
+        /** Return only errors from this radio's counter. */
+        radio_id?: string;
       },
       params: RequestParams = {},
     ) =>
-      this.request<object, any>({
+      this.request<
+        {
+          success?: boolean;
+          data?: {
+            history?: CrcErrorSample[];
+            hours?: number;
+            count?: number;
+            /** Echoed back only when the request named a radio. */
+            radio_id?: string;
+          };
+        },
+        any
+      >({
         path: `/crc_error_history`,
         method: "GET",
         query: query,

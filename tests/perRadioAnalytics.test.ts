@@ -217,6 +217,14 @@ describe('RadioScopeSelector', () => {
     await buttons[2].trigger('click');
     expect(wrapper.emitted('update:modelValue')).toEqual([['south']]);
   });
+
+  it('drops All radios where combining radios would answer nothing', () => {
+    const wrapper = mount(RadioScopeSelector, {
+      props: { modelValue: 'north', radios, allowAll: false },
+    });
+
+    expect(wrapper.findAll('button').map((b) => b.text())).toEqual(['north', 'south']);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -263,6 +271,40 @@ describe('radio scope in the URL', () => {
     const { wrapper } = await mountWithRouter('/statistics?radio=gone');
     expect(wrapper.text()).toBe(ALL_RADIOS);
   });
+
+  it('falls back to the default radio where All radios is not an answer', async () => {
+    const RequiresRadio = defineComponent({
+      setup: () => {
+        const { scope } = useRadioScope({ requireRadio: true });
+        return () => h('span', scope.value);
+      },
+    });
+    const pinia = seedPinia(BRIDGE_STATS);
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [{ path: '/rf-health', component: RequiresRadio }],
+    });
+    await router.push('/rf-health?radio=gone');
+    await router.isReady();
+
+    const wrapper = mount(RequiresRadio, { global: { plugins: [pinia, router] } });
+
+    expect(wrapper.text()).toBe('north');
+  });
+
+  it('leaves a single-radio node on All radios even where a radio is required', async () => {
+    // Its samples carry no radio id, so filtering by one would return nothing.
+    const RequiresRadio = defineComponent({
+      setup: () => {
+        const { scope } = useRadioScope({ requireRadio: true });
+        return () => h('span', scope.value);
+      },
+    });
+    const pinia = seedPinia(SINGLE_STATS);
+    const wrapper = mount(RequiresRadio, { global: { plugins: [pinia] } });
+
+    expect(wrapper.text()).toBe(ALL_RADIOS);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -306,6 +348,17 @@ function endpointData(endpoint: string): unknown {
         { name: 'Transmitted Packets', type: 'tx_count', data: [[now - 600, 0.01], [now - 300, 0.01]] },
       ],
     },
+    '/noise_floor_history': {
+      history: [
+        { timestamp: now - 300, noise_floor_dbm: -118, radio_id: 'north' },
+        { timestamp: now - 290, noise_floor_dbm: -101, radio_id: 'south' },
+        { timestamp: now - 280, noise_floor_dbm: -117, radio_id: 'north' },
+        { timestamp: now - 270, noise_floor_dbm: -95, radio_id: null },
+      ],
+    },
+    '/crc_error_history': {
+      history: [{ timestamp: now - 300, count: 4, radio_id: 'north' }],
+    },
   };
   return data[endpoint] ?? { history: [] };
 }
@@ -342,9 +395,11 @@ describe('Statistics per radio', () => {
     expect(cards(wrapper)).toEqual([
       'Total RX · All radios=46',
       'Total TX · Per packet=8',
-      'CRC Errors · north only=0',
+      'CRC Errors · All radios=4',
     ]);
-    expect(wrapper.get('[data-testid="noise-floor-radio-note"]').text()).toContain('north');
+    expect(wrapper.get('[data-testid="noise-floor-radio-note"]').text()).toContain(
+      'One line per radio',
+    );
     expect(wrapper.text()).toContain('Direct');
 
     await wrapper.get('[data-testid="radio-scope-south"]').trigger('click');
@@ -353,7 +408,7 @@ describe('Statistics per radio', () => {
     expect(cards(wrapper)).toEqual([
       'Total RX · south=18',
       'Transmissions · south=8',
-      'CRC Errors · north only=0',
+      'CRC Errors · south=4',
     ]);
     expect(wrapper.get('[data-testid="unattributed-note"]').text()).toContain('not counted for south');
     expect(wrapper.text()).toContain('Receptions on south.');
@@ -442,11 +497,131 @@ describe('Statistics per radio', () => {
     expect(rxCardPoints(wrapper)).toBeGreaterThan(0);
   });
 
+  it('draws one noise floor line per radio under All radios', async () => {
+    // A noise floor cannot be summed or averaged across two bands; one line each.
+    HTMLCanvasElement.prototype.getContext = vi.fn(() => ({})) as never;
+    (Chart as unknown as { instances: unknown[] }).instances.length = 0;
+
+    await mountStatistics(BRIDGE_STATS);
+
+    const charts = (Chart as unknown as {
+      instances: Array<{ data: { datasets: Array<{ label?: string }> } }>;
+    }).instances;
+    const noise = charts.find((chart) =>
+      chart.data.datasets.every((dataset) => ['north', 'south', 'no radio'].includes(dataset.label ?? '')),
+    );
+    expect(noise?.data.datasets.map((dataset) => dataset.label)).toEqual([
+      'north',
+      'south',
+      'no radio',
+    ]);
+  });
+
+  it('keeps a radio own colour when the other has no samples in the window', async () => {
+    // Coloured by position in the drawn list, an idle radio would hand its colour on.
+    HTMLCanvasElement.prototype.getContext = vi.fn(() => ({})) as never;
+    const now = Math.floor(Date.now() / 1000);
+
+    const southColour = async (history: unknown[]) => {
+      (Chart as unknown as { instances: unknown[] }).instances.length = 0;
+      mockedGet.mockImplementation(async (endpoint: string) =>
+        endpoint === '/noise_floor_history'
+          ? ({ success: true, data: { history } } as never)
+          : ({ success: true, data: endpointData(endpoint) } as never),
+      );
+      const wrapper = await mountStatistics(BRIDGE_STATS);
+      const datasets = (
+        Chart as unknown as {
+          instances: Array<{
+            data: { datasets: Array<{ label?: string; backgroundColor?: string }> };
+          }>;
+        }
+      ).instances.flatMap((chart) => chart.data.datasets);
+      wrapper.unmount();
+      return datasets.find((dataset) => dataset.label === 'south')?.backgroundColor;
+    };
+
+    const withBoth = await southColour([
+      { timestamp: now - 300, noise_floor_dbm: -118, radio_id: 'north' },
+      { timestamp: now - 290, noise_floor_dbm: -101, radio_id: 'south' },
+    ]);
+    const southOnly = await southColour([
+      { timestamp: now - 290, noise_floor_dbm: -101, radio_id: 'south' },
+    ]);
+
+    expect(withBoth).toBeTruthy();
+    expect(southOnly).toBe(withBoth);
+  });
+
+  it('asks for one radio\'s noise floor and CRC errors when one is chosen', async () => {
+    const wrapper = await mountStatistics(BRIDGE_STATS);
+    const params = (endpoint: string) =>
+      mockedGet.mock.calls.filter(([name]) => name === endpoint).map(([, query]) => query);
+    const lastOf = <T,>(items: T[]): T | undefined => items[items.length - 1];
+
+    // Assert the requests happened: `every` over nothing is true.
+    expect(params('/noise_floor_history').length).toBeGreaterThan(0);
+    expect(params('/noise_floor_history').every((query) => !('radio_id' in (query ?? {})))).toBe(true);
+
+    mockedGet.mockClear();
+    await wrapper.get('[data-testid="radio-scope-south"]').trigger('click');
+    await flushPromises();
+
+    expect(lastOf(params('/noise_floor_history'))).toMatchObject({ radio_id: 'south' });
+    expect(lastOf(params('/crc_error_history'))).toMatchObject({ radio_id: 'south' });
+  });
+
+  it('draws only the chosen radio samples, and nothing when it has none', async () => {
+    // The stale answer left behind would be the other radio's, under this name.
+    HTMLCanvasElement.prototype.getContext = vi.fn(() => ({})) as never;
+    (Chart as unknown as { instances: unknown[] }).instances.length = 0;
+    const now = Math.floor(Date.now() / 1000);
+    const samples = [
+      { timestamp: now - 300, noise_floor_dbm: -118, radio_id: 'north' },
+      { timestamp: now - 290, noise_floor_dbm: -101, radio_id: 'south' },
+    ];
+    mockedGet.mockImplementation(async (endpoint: string, query?: Record<string, unknown>) => {
+      if (endpoint !== '/noise_floor_history') {
+        return { success: true, data: endpointData(endpoint) } as never;
+      }
+      const radio = query?.radio_id;
+      return {
+        success: true,
+        data: { history: radio ? samples.filter((row) => row.radio_id === radio) : samples },
+      } as never;
+    });
+
+    const wrapper = await mountStatistics(BRIDGE_STATS);
+    const drawn = () => {
+      const charts = (
+        Chart as unknown as {
+          instances: Array<{ data: { datasets: Array<{ label?: string; data?: unknown[] }> } }>;
+        }
+      ).instances;
+      const noise = charts.find((chart) =>
+        chart.data.datasets.some((dataset) =>
+          ['north', 'south', 'no radio', 'Noise Floor (dBm)'].includes(dataset.label ?? ''),
+        ),
+      );
+      return (noise?.data.datasets ?? []).flatMap((dataset) => dataset.data ?? []);
+    };
+
+    await wrapper.get('[data-testid="radio-scope-south"]').trigger('click');
+    await flushPromises();
+    expect(drawn()).toHaveLength(1);
+
+    // A radio the window holds nothing for draws nothing, not the other's samples.
+    samples.length = 0;
+    await wrapper.get('[data-testid="radio-scope-north"]').trigger('click');
+    await flushPromises();
+    expect(drawn()).toHaveLength(0);
+  });
+
   it('leaves a single-radio node as it was', async () => {
     const wrapper = await mountStatistics(SINGLE_STATS);
 
     expect(wrapper.find('[data-testid="radio-scope"]').exists()).toBe(false);
-    expect(cards(wrapper)).toEqual(['Total RX=46', 'Total TX=8', 'CRC Errors=0']);
+    expect(cards(wrapper)).toEqual(['Total RX=46', 'Total TX=8', 'CRC Errors=4']);
     expect(wrapper.find('[data-testid="noise-floor-radio-note"]').exists()).toBe(false);
     expect(mockedGet.mock.calls.map(([endpoint]) => endpoint)).not.toContain('/radio_packet_rates');
   });

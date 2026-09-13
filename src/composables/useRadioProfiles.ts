@@ -167,8 +167,15 @@ export function useRadioProfiles() {
  * radios on a single-radio node, and falls back to All radios when the selected
  * radio is no longer configured. Kept in `?radio=` when the app has a router, so
  * a reload, a shared link or the back button keeps the radio.
+ *
+ * `requireRadio` is for views where All radios is not a meaningful answer: RF
+ * Health correlates one receiver's noise floor with its own CRC errors and
+ * contention, and pairing one radio's noise with another's errors is a
+ * correlation between two unrelated channels. Such a view falls back to the
+ * default radio rather than to All. It changes nothing on a single-radio node,
+ * whose samples carry no radio id and so must never be filtered by one.
  */
-export function useRadioScope() {
+export function useRadioScope(options?: { requireRadio?: boolean }) {
   const radioProfiles = useRadioProfiles();
   const route = inject(routeLocationKey, null);
   const router = inject(routerKey, null);
@@ -180,11 +187,18 @@ export function useRadioScope() {
     return typeof value === 'string' && value ? value : ALL_RADIOS;
   });
 
+  const fallback = computed(() => {
+    if (!options?.requireRadio) return ALL_RADIOS;
+    const ids = radioProfiles.profiles.value.map((entry) => entry.radioId);
+    const preferred = radioProfiles.defaultRadioId.value;
+    return ids.includes(preferred) ? preferred : (ids[0] ?? ALL_RADIOS);
+  });
+
   const scope = computed<string>({
     get() {
       if (!radioProfiles.isMultiRadio.value) return ALL_RADIOS;
       const ids = radioProfiles.profiles.value.map((entry) => entry.radioId);
-      return ids.includes(requested.value) ? requested.value : ALL_RADIOS;
+      return ids.includes(requested.value) ? requested.value : fallback.value;
     },
     set(value) {
       if (!route || !router) {

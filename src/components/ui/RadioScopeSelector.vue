@@ -16,14 +16,18 @@ const props = withDefaults(
     modelValue: string;
     radios: RadioIdentity[];
     label?: string;
+    /** Offer "All radios". False where combining radios would answer nothing. */
+    allowAll?: boolean;
   }>(),
-  { label: 'Radio' },
+  { label: 'Radio', allowAll: true },
 );
 
 const emit = defineEmits<{ 'update:modelValue': [value: string] }>();
 
 const options = computed(() => [
-  { value: ALL_RADIOS, label: 'All radios', title: 'Every radio combined' },
+  ...(props.allowAll
+    ? [{ value: ALL_RADIOS, label: 'All radios', title: 'Every radio combined' }]
+    : []),
   ...props.radios.map((radio) => ({
     value: radio.radioId,
     label: radio.radioId,

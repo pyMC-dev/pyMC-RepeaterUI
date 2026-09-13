@@ -66,6 +66,7 @@ interface NoiseFloorData {
   chart_data: Array<{
     timestamp: number;
     noise_floor_dbm: number | null;
+    radio_id?: string | null;
   }>;
 }
 
@@ -73,6 +74,9 @@ interface NoiseFloorHistoryItem {
   timestamp: number;
   noise_floor_dbm?: number;
   noise_floor?: number;
+  // Named by the server only on a multi-radio node; null for a sample stored
+  // before per-radio sampling or read from a radio that is gone.
+  radio_id?: string | null;
 }
 
 interface NoiseFloorApiResponse {
@@ -86,15 +90,11 @@ interface SignalMetrics {
   snr: number | null;
   rssi: number | null;
   noiseFloor: number | null;
+  radioId?: string | null;
 }
 
 const packetStore = usePacketStore();
-const {
-  profiles: radioProfiles,
-  isMultiRadio,
-  defaultRadioId,
-  scope: radioScope,
-} = useRadioScope();
+const { profiles: radioProfiles, isMultiRadio, scope: radioScope } = useRadioScope();
 
 // Returns Chart.js time-axis unit and display format appropriate for the selected range.
 // ≤ 24 h → hour ticks with HH:mm; 24–48 h → include day name; > 48 h → day ticks with date.
@@ -257,12 +257,26 @@ const cardTitles = computed(() => {
   if (!isMultiRadio.value) {
     return { rx: 'Total RX', rxSub: '', tx: 'Total TX', txSub: '', crc: 'CRC Errors', crcSub: '' };
   }
-  const crc = { crc: 'CRC Errors', crcSub: `${defaultRadioId.value} only` };
   if (radioScope.value === ALL_RADIOS) {
-    return { rx: 'Total RX', rxSub: 'All radios', tx: 'Total TX', txSub: 'Per packet', ...crc };
+    // CRC errors are counted per receiver, so across radios they add up.
+    return {
+      rx: 'Total RX',
+      rxSub: 'All radios',
+      tx: 'Total TX',
+      txSub: 'Per packet',
+      crc: 'CRC Errors',
+      crcSub: 'All radios',
+    };
   }
   const radio = radioScope.value;
-  return { rx: 'Total RX', rxSub: radio, tx: 'Transmissions', txSub: radio, ...crc };
+  return {
+    rx: 'Total RX',
+    rxSub: radio,
+    tx: 'Transmissions',
+    txSub: radio,
+    crc: 'CRC Errors',
+    crcSub: radio,
+  };
 });
 
 // Aggregate data into buckets - ~72 buckets regardless of time range
@@ -476,15 +490,23 @@ const loadRouteStatsData = async () => {
   }
 };
 
+// Each load bumps these. Switching radio twice quickly would otherwise let the
+// first answer land last and draw one radio's samples under the other's name.
+let noiseLoadGeneration = 0;
+let crcLoadGeneration = 0;
+
 const loadNoiseFloorData = async () => {
+  const generation = ++noiseLoadGeneration;
   chartStatus.noiseFloor = 'Connecting...';
   noiseFloorChartError.value = null;
   try {
     // Request exactly as many samples as the selected window can hold at 30 s/sample.
     // No artificial cap — the server returns the right amount of data for the period.
     // Client-side step-filter below thins for display only.
-    const limit = selectedHours.value * 120;
-    const params = { hours: selectedHours.value, limit };
+    // Per radio at 30 s/sample, so a bridge's combined window holds twice as many.
+    const limit = selectedHours.value * 120 * Math.max(1, radioProfiles.value.length);
+    const params: Record<string, string | number> = { hours: selectedHours.value, limit };
+    if (radioScope.value !== ALL_RADIOS) params.radio_id = radioScope.value;
 
     const response = await streamingGet('/noise_floor_history', params, {
       idleTimeoutMs: 30_000,
@@ -493,53 +515,85 @@ const loadNoiseFloorData = async () => {
       },
     });
 
+    if (generation !== noiseLoadGeneration) return;
+
     if (response.success && response.data) {
       const responseData = response.data as NoiseFloorApiResponse;
       const historyData = responseData.history || [];
-      if (Array.isArray(historyData) && historyData.length > 0) {
-        // Thin to at most 1500 evenly distributed points for rendering.
-        let display = historyData;
-        if (historyData.length > 1500) {
-          const step = Math.ceil(historyData.length / 1500);
-          display = historyData.filter((_, i) => i % step === 0);
+      if (!Array.isArray(historyData) || historyData.length === 0) {
+        // A radio with nothing in this window shows nothing. Keeping the last
+        // answer would draw the other radio's samples under this radio's name.
+        noiseFloorData.value = { chart_data: [] };
+        generateSignalMetricsHistory();
+      } else {
+        // Thin to at most 1500 evenly distributed points for rendering, per radio.
+        // Thinning the merged series instead drops whole radios: samples arrive
+        // interleaved, so every Nth row of a two-radio history is the same radio
+        // every time.
+        const byRadio = new Map<string | null, NoiseFloorHistoryItem[]>();
+        for (const item of historyData as NoiseFloorHistoryItem[]) {
+          const key = item.radio_id ?? null;
+          const rows = byRadio.get(key);
+          if (rows) rows.push(item);
+          else byRadio.set(key, [item]);
         }
+        const budget = Math.max(1, Math.floor(1500 / byRadio.size));
+        const display: NoiseFloorHistoryItem[] = [];
+        for (const rows of byRadio.values()) {
+          const step = rows.length > budget ? Math.ceil(rows.length / budget) : 1;
+          display.push(...rows.filter((_, i) => i % step === 0));
+        }
+        display.sort((a, b) => (a.timestamp ?? 0) - (b.timestamp ?? 0));
         noiseFloorData.value = {
           chart_data: display.map((item: NoiseFloorHistoryItem) => ({
             timestamp: item.timestamp ?? Date.now() / 1000,
             noise_floor_dbm: mapNoiseFloorValue(item),
+            radio_id: item.radio_id ?? null,
           })),
         };
         generateSignalMetricsHistory();
       }
     }
   } catch (err) {
+    if (generation !== noiseLoadGeneration) return;
     noiseFloorData.value = { chart_data: [] };
     noiseFloorChartError.value = err instanceof Error ? err.message : 'Failed to load';
   } finally {
-    chartLoadingStates.value.noiseFloor = false;
-    if (!noiseFloorChartError.value) {
-      await nextTick();
-      createOrUpdateSignalMetricsChart();
+    // A superseded load must not clear the spinner the newer one put up.
+    if (generation === noiseLoadGeneration) {
+      chartLoadingStates.value.noiseFloor = false;
+      if (!noiseFloorChartError.value) {
+        await nextTick();
+        createOrUpdateSignalMetricsChart();
+      }
     }
   }
 };
 
 const loadCrcErrorData = async () => {
+  const generation = ++crcLoadGeneration;
   crcDataError.value = null;
   try {
-    const response = await streamingGet('/crc_error_history', {
-      hours: selectedHours.value,
-    });
+    // Under All radios this returns every radio's batches, which the card and
+    // sparkline sum: CRC errors add up across receivers, unlike a noise floor.
+    const crcParams: Record<string, string | number> = { hours: selectedHours.value };
+    if (radioScope.value !== ALL_RADIOS) crcParams.radio_id = radioScope.value;
+    const response = await streamingGet('/crc_error_history', crcParams);
+
+    if (generation !== crcLoadGeneration) return;
 
     if (response?.success && response.data) {
       const data = response.data as { history: Array<{ timestamp: number; count: number }> };
       crcErrorData.value = data.history || [];
     }
   } catch (err) {
+    if (generation !== crcLoadGeneration) return;
     crcErrorData.value = [];
     crcDataError.value = err instanceof Error ? err.message : 'Failed to load';
   } finally {
-    chartLoadingStates.value.sparklineCrc = false;
+    if (generation === crcLoadGeneration) {
+      chartLoadingStates.value.sparklineCrc = false;
+    }
   }
 };
 
@@ -576,6 +630,7 @@ const generateSignalMetricsHistory = () => {
       snr: null, // No SNR data
       rssi: null, // No RSSI data
       noiseFloor: item.noise_floor_dbm,
+      radioId: item.radio_id ?? null,
     }));
   }
 };
@@ -843,19 +898,70 @@ const createOrUpdatePacketRateChart = () => {
 };
 
 
+/** Chart.js datasets from the noise floor series, plain-object copied for Vue. */
+const buildNoiseDatasets = (
+  series: Array<{ label: string; color: string; points: Array<{ x: number; y: number }> }>,
+) =>
+  series.map((dataset) => ({
+    label: dataset.label,
+    data: JSON.parse(JSON.stringify(dataset.points.map((point) => ({ x: point.x, y: point.y })))),
+    borderWidth: 0,
+    backgroundColor: dataset.color,
+    pointRadius: 3,
+    pointHoverRadius: 5,
+    pointStyle: 'circle' as const,
+  }));
+
+/**
+ * Noise floor series to draw: one per radio under All radios on a bridge, else
+ * one. A noise floor cannot be summed or averaged across receivers on different
+ * bands — the two numbers describe two channels — so they are drawn side by side.
+ */
+const noiseFloorDatasets = computed(() => {
+  const points = signalMetricsHistory.value
+    .filter((point) => point.noiseFloor !== null && point.noiseFloor !== undefined)
+    .map((point) => ({ x: point.timestamp, y: point.noiseFloor as number, radioId: point.radioId }));
+
+  if (!isMultiRadio.value || radioScope.value !== ALL_RADIOS) {
+    return [{ label: 'Noise Floor (dBm)', color: CHART_COLORS.noiseFloorFill, points }];
+  }
+
+  const order = radioProfiles.value.map((radio) => radio.radioId);
+  const palette = [
+    CHART_COLORS.noiseFloorFill,
+    cssVar('--openhop-purple-light', '#a78bfa'),
+    cssVar('--color-accent-cyan', '#06b6d4'),
+    cssVar('--color-accent-green', '#10b981'),
+  ];
+  const groups = new Map<string | null, typeof points>();
+  for (const id of order) groups.set(id, []);
+  for (const point of points) {
+    const key = point.radioId != null && groups.has(point.radioId) ? point.radioId : null;
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key)!.push(point);
+  }
+
+  return [...groups.entries()]
+    .filter(([, group]) => group.length > 0)
+    .map(([radioId, group]) => ({
+      // Samples stored before per-radio sampling belong to no radio in particular.
+      label: radioId ?? 'no radio',
+      // Coloured by the radio's place in the configured order, not by its place
+      // in this list: a radio with no samples in the window would otherwise hand
+      // its colour to the next one along.
+      color: palette[(radioId === null ? order.length : order.indexOf(radioId)) % palette.length],
+      points: group,
+    }));
+});
+
 const createOrUpdateSignalMetricsChart = () => {
   if (!signalMetricsCanvasRef.value) return;
 
   const ctx = signalMetricsCanvasRef.value.getContext('2d');
   if (!ctx) return;
 
-  // Only show noise floor data from SQLite
-  const noiseData = signalMetricsHistory.value
-    .map((point) => ({
-      x: point.timestamp,
-      y: point.noiseFloor,
-    }))
-    .filter((point): point is { x: number; y: number } => point.y !== null && point.y !== undefined);
+  const datasets = noiseFloorDatasets.value;
+  const noiseData = datasets.flatMap((dataset) => dataset.points);
 
   // Calculate Y-axis bounds with 5% headroom
   const noiseYValues = noiseData.map((d) => d.y);
@@ -869,15 +975,22 @@ const createOrUpdateSignalMetricsChart = () => {
   if (signalMetricsChart.value) {
     try {
       const chart = toRaw(signalMetricsChart.value);
-      // Convert to plain object to avoid Vue reactivity issues
-      const plainNoiseData = JSON.parse(JSON.stringify(noiseData));
-      if (chart.data.datasets[0]) chart.data.datasets[0].data = plainNoiseData;
+      // Rebuilt rather than patched in place: switching radio scope changes how
+      // many series there are, and a stale extra dataset would keep drawing.
+      chart.data.datasets = buildNoiseDatasets(datasets);
 
       // Update X-axis bounds and time unit for the selected range
       if (chart.options?.scales?.x) {
         chart.options.scales.x.min = Date.now() - selectedHours.value * 3600 * 1000;
         chart.options.scales.x.max = Date.now();
         (chart.options.scales.x as any).time = getChartTimeConfig(selectedHours.value);
+      }
+
+      // Rescale Y: switching radio scope moves the noise floor by tens of dB on a
+      // bridge, and a stale axis leaves the new series pinned to one edge.
+      if (chart.options?.scales?.y) {
+        chart.options.scales.y.min = noiseYMin;
+        chart.options.scales.y.max = noiseYMax;
       }
 
       // Refresh theme-aware colours on existing chart
@@ -896,24 +1009,11 @@ const createOrUpdateSignalMetricsChart = () => {
     }
   }
 
-  // Convert to plain object to avoid Vue reactivity issues
-  const plainNoiseData = JSON.parse(JSON.stringify(noiseData));
-
   // Create new chart only if it doesn't exist
   const chartInstance = new ChartJS(ctx, {
     type: 'scatter',
     data: {
-      datasets: [
-        {
-          label: 'Noise Floor (dBm)',
-          data: plainNoiseData,
-          borderWidth: 0,
-          backgroundColor: CHART_COLORS.noiseFloorFill,
-          pointRadius: 3,
-          pointHoverRadius: 5,
-          pointStyle: 'circle',
-        },
-      ],
+      datasets: buildNoiseDatasets(datasets),
     },
     options: {
       responsive: true,
@@ -1006,6 +1106,14 @@ const createOrUpdateSignalMetricsChart = () => {
 
 // Switching radios reuses the data already loaded; only the chart has to redraw.
 watch(radioScope, async () => {
+  // Noise floor and CRC are now sampled per radio, so a scope change is a new
+  // request, not just a redraw of what is already loaded.
+  chartLoadingStates.value.noiseFloor = true;
+  chartLoadingStates.value.sparklineCrc = true;
+  noiseFloorChartError.value = null;
+  void loadNoiseFloorData();
+  void loadCrcErrorData();
+
   await nextTick();
   createOrUpdatePacketRateChart();
 });
@@ -1177,7 +1285,11 @@ onBeforeUnmount(() => {
           class="text-xs text-content-muted -mt-2 mb-3"
           data-testid="noise-floor-radio-note"
         >
-          Measured on the default radio ({{ defaultRadioId }}).
+          {{
+            radioScope === ALL_RADIOS
+              ? 'One line per radio; noise floors are not comparable across bands.'
+              : `Measured on ${radioScope}.`
+          }}
         </p>
         <ChartCard
           class="flex-1 min-h-[12rem] sm:min-h-[16rem] rounded-lg"

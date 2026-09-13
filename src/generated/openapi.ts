@@ -155,6 +155,7 @@ export interface NeighborLinkSnapshot {
 export interface NeighborLinksData {
   links?: NeighborLinkSnapshot[];
   active_within_seconds?: number;
+  limit?: number;
   count?: number;
 }
 
